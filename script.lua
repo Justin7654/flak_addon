@@ -6,15 +6,16 @@ https://youtu.be/H8zPNMqVi2E?si=cixPLgSg4Ez3AXtc
 --]]
 
 -- Imports
-util = require("util")
-flakMain = require("flakMain")
+util = require("libs.util")
+d = require("libs.debugging")
+flakMain = require("libs.flakMain")
 
 -- Data
 g_savedata = {
 	tickCounter = 0,
 	settings = {
 		ignoreWeather = property.checkbox("Weather does not affect flak accuracy",  false),
-		realisticFlakTravelTime = property.checkbox("Simulate flak bullet physics & target lead prediction", false),
+		flakShellSpeed = property.slider("Flak Shell Speed (m/s)", 200, 1000, 100, 500),
 		fireRate = property.slider("Flak Fire Rate (seconds between shots)", 1, 20, 1, 4),
 		minAlt = property.slider("Minimum Fire Altitude", 100, 700, 50, 200),
 		flakAccuracyMult = property.slider("Flak Accuracy Multiplier", 0.1, 2, 0.1, 1),
@@ -24,12 +25,22 @@ g_savedata = {
 			active = false,
 			difficulty = 1,
 			shots = 0,
+			prevPlayerPositions = {} ---@type table<number, SWMatrix>
 		}
 	},
 	loadedFlak = {}, ---@type FlakData[]
 	loadedOther = {}, ---@type number[]
-	queuedExplosions = {}, ---@type table<number, ExplosionData>
-	debug = false
+	queuedExplosions = {}, ---@type table<number, ExplosionData[]>
+	debug = {
+		chat = false,
+		error = true,
+		lead = false,
+	},
+	debugVariables = {
+		lead = {
+			mapLabels = {} ---@type table<number, number[]>
+		}
+	}
 }
 
 time = { -- the time unit in ticks
@@ -46,19 +57,27 @@ s = server
 function onTick(game_ticks)
     g_savedata.tickCounter = g_savedata.tickCounter + 1
 	--Loop through all flak once every 10 seconds and if they are targetting a player higher than 150m then
-	local rate = time.second*g_savedata.settings.fireRate/40
+	local rate = time.second*g_savedata.settings.fireRate
     for index, flak in pairs(g_savedata.loadedFlak) do
 		
 		--Check if its time to fire
 		if isTickID(flak.tick_id, rate) then
 
 			--Check if theres any targets
+			local sourceMatrix, source_is_success = server.getVehiclePos(flak.vehicle_id)
 			local targetMatrix = flakMain.getFlakTarget(flak.vehicle_id)
 			
 			if targetMatrix ~= nil and targetMatrix ~= flak.lastTargetMatrix then --Either not airborne or the AI doesnt have a target anymore. Dont fire
-				--Fire the flak
-				flakMain.fireFlak(targetMatrix)
-				flak.lastTargetMatrix = targetMatrix
+				if source_is_success then
+					--Calculate lead
+					--leadMatrix = flakMain.calculateLead(sourceMatrix, targetMatrix, flak.lastTargetMatrix,  g_savedata.tickCounter-flak.lastTargetTime)
+					--d.debugLabel("lead", leadMatrix, "Lead", rate)
+					--Fire the flak
+					flakMain.fireFlak(sourceMatrix, targetMatrix)
+					flak.lastTargetMatrix = targetMatrix
+				else
+					d.printError("Fire", "Flak vehicle ",flak.vehicle_id," failed to get position")
+				end
 			end
 		end
 	end
@@ -68,11 +87,14 @@ function onTick(game_ticks)
 		for _, player in pairs(s.getPlayers()) do
 			playerPosition, success = s.getPlayerPos(player.id)
 			if success and isTickID(1, math.floor(rate/g_savedata.fun.noPlayerIsSafe.difficulty)) or math.random(1,60) == 1 then
-				flakMain.fireFlak(playerPosition)
+				flakMain.fireFlak(playerPosition, playerPosition)
 				g_savedata.fun.noPlayerIsSafe.shots = g_savedata.fun.noPlayerIsSafe.shots + 1
 			end
 		end
 	end
+
+	--d.tickDebug()
+	flakMain.executeQueuedExplosions()
 end
 
 function onVehicleLoad(vehicle_id)
@@ -105,12 +127,14 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 	command = string.lower(command)
 	args = {...}
 	if command == "debug" then
-		if g_savedata.debug then
-			g_savedata.debug = false
-			s.announce("[Flak Commands]", "Debug mode disabled")
-		elseif not g_savedata.debug then
-			g_savedata.debug = true
-			s.announce("[Flak Commands]", "Debug mode enabled")
+		if args[1] == nil then
+			s.announce("[Flak Commands]", "Available debug modes:\nchat\nerror\nlead")
+		else
+			debugType = string.lower(args[1])
+			success = d.toggleDebug(debugType)
+			if not success then
+				s.announce("[Flak Commands]", "Debug mode not found; available modes:\nchat\nerror\nlead")
+			end
 		end
 	elseif command == "reset" then
 		if args[1] == "tracking" then
@@ -136,16 +160,10 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		else
 			s.announce("[Flak Commands]", "Event not found; available events:\nNoPlayerIsSafe <difficulty>")
 		end
+	elseif command == "manBulletSpeed" and arg[1] then
+		g_savedata.settings.flakShellSpeed = tonumber(args[1])
+		s.announce("[Flak Commands]", "Flak shell speed set to "..g_savedata.settings.flakShellSpeed.." m/s by "..s.getPlayerName(user_peer_id))
 	end
-end
-	
---Each argument is converted to a string and added together to make the message
-function printDebug(...)
-	if not g_savedata.debug then
-		return
-	end
-	local msg = table.concat({...}, "")
-	s.announce("[Flak Debug]", msg)
 end
 
 ---@param msg string

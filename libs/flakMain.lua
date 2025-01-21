@@ -1,5 +1,7 @@
 flakMain = {}
 
+d = require("libs.debugging")
+
 --- @param vehicle_id number
 --- @return boolean isFlak True if the vehicle has a IS_AI_FLAK sign on it
 function flakMain.isVehicleFlak(vehicle_id)
@@ -14,13 +16,15 @@ function flakMain.addVehicleToLoadedFlak(vehicle_id)
 	---@field vehicle_id number the vehicle_id of the flak vehicle
 	---@field tick_id number a random number between 0 and the fire rate for the flak
 	---@field lastTargetMatrix SWMatrix the last matrix of the flak target
+    ---@field lastTargetTime number the g_savedata counter of the lastTargetMatrix time
     local flakData = {
         vehicle_id = vehicle_id,
         tick_id = math.random(0, time.second*g_savedata.settings.fireRate-1),
-		lastTargetMatrix = matrix.translation(0,0,0)
+		lastTargetMatrix = matrix.translation(0,0,0),
+        lastTargetTime = g_savedata.tickCounter
     }
 	table.insert(g_savedata.loadedFlak, 1, flakData)
-    printDebug("Vehicle ",vehicle_id, " registered as flak")
+    d.printDebug("Vehicle ",vehicle_id, " registered as flak")
 end
 
 --- Checks if the specified vehicle is in the loaded flak list.
@@ -39,7 +43,7 @@ end
 function flakMain.removeVehicleFromLoadedFlak(vehicle_id)
     for i, flak in pairs(g_savedata.loadedFlak) do
         if flak.vehicle_id == vehicle_id then
-            printDebug("Vehicle ",vehicle_id, " unregistered as flak")
+            d.printDebug("Vehicle ",vehicle_id, " unregistered as flak")
             table.remove(g_savedata.loadedFlak, i)
             return true
         end
@@ -100,10 +104,51 @@ function flakMain.getFlakTarget(vehicle_id)
     end
 end
 
+--- Calculate the time it will take for the flak to reach the target
+--- @param targetMatrix SWMatrix the matrix of the target
+--- @param flakMatrix SWMatrix the matrix of the flak vehicle
+--- @return number travelTime the time in ticks it will take for the flak to reach the target
 function flakMain.calculateTravelTime(targetMatrix, flakMatrix)
     local distance = matrix.distance(targetMatrix, flakMatrix)
-    local speed = 300
+    local speed = g_savedata.settings.flakShellSpeed/time.second --The speed in m/s
     return distance/speed
+end
+
+--- Calculate the position the flak should aim at to hit the target, accounting for t
+--- @param flakMatrix SWMatrix the matrix of the flak vehicle
+--- @param targetMatrix SWMatrix the matrix of the target
+--- @param lastTargetMatrix SWMatrix the last matrix of the flak target, used to calculate velocity and acceleration for the target
+--- @param timeBetween number the amount of time in ticks between when the current target position was taken and the last target matrix was taken
+function flakMain.calculateLead(flakMatrix, targetMatrix, lastTargetMatrix, timeBetween)
+    local travelTime = flakMain.calculateTravelTime(targetMatrix, flakMatrix) --Travel time in ticks
+
+    --Calculate the velocity of the target
+    local x1, y1, z1 = matrix.position(targetMatrix)
+    local x2, y2, z2 = matrix.position(lastTargetMatrix)
+    local vx = x1 - x2
+    local vy = y1 - y2
+    local vz = z1 - z2
+
+    -- Move the targetMatrix using the bullets travelTime and target velocity
+    x = x1 + vx * travelTime
+    y = y1 + vy * travelTime
+    z = z1 + vz * travelTime
+    return matrix.translation(x, y, z)
+    
+    --[[
+    --Calculate the delta between the target matrix and the last target matrix
+    local x1, y1, z1 = matrix.position(targetMatrix)
+    local x2, y2, z2 = matrix.position(lastTargetMatrix)
+    local dx = x1 - x2
+    local dy = y1 - y2
+    local dz = z1 - z2
+    -- Move the targetMatrix forward by the delta times the travel time
+    local x, y, z = matrix.position(targetMatrix)
+    x = x + dx * travelTime
+    y = y + dy * travelTime
+    z = z + dz * travelTime
+    return matrix.translation(x, y, z)
+    --]]
 end
 
 --[[
@@ -114,15 +159,16 @@ using the spawnExplosion code from here
 ]]
 
 --- Generates a flak explosion nearby the given matrix.
+--- @param sourceMatrix SWMatrix the position of the gun thats firing
 --- @param targetMatrix SWMatrix the matrix to generate the explosion at
-function flakMain.fireFlak(targetMatrix) --Convert to using flakObject
+function flakMain.fireFlak(sourceMatrix, targetMatrix) --Convert to using flakObject
     local x,alt,z = matrix.position(targetMatrix)
     local currentWeather = s.getWeather(targetMatrix)
-    printDebug("Firing at ",x,",",alt,",",z)
+    d.printDebug("Firing at ",x,",",alt,",",z)
 
     --Calculate if its too high
     if alt < g_savedata.settings.minAlt then
-        printDebug("Target is too low to fire at")
+        d.printDebug("Target is too low to fire at")
         return
     end
 
@@ -138,12 +184,9 @@ function flakMain.fireFlak(targetMatrix) --Convert to using flakObject
     
     --Calculate accuracy
     local spread = 0
-    local altFactor = 10/(0.5 ^ (x/250)) --10+(0.2*alt) 
-    printDebug("Altitude Spread: ",altFactor)
+    local altFactor = 10/(0.5 ^ (alt/250)) --10+(0.2*alt) 
     local spread = altFactor
-    printDebug("Total Spread: ",spread)
     local spread = spread * weatherMultiplier
-    printDebug("Spread after multipliers: ",spread)
     
     --Randomize the targetMatrix based on spread
     spread = math.floor(spread)
@@ -152,10 +195,39 @@ function flakMain.fireFlak(targetMatrix) --Convert to using flakObject
     z = z + math.random(-spread, spread)
     local resultMatrix = matrix.translation(x,alt, z)
 
+    --Randomize travel time alittle
+    local travelTime = flakMain.calculateTravelTime(targetMatrix, sourceMatrix)d
+    d.printDebug("Travel time is ",type(travelTime))
+    travelTime = travelTime + math.random() * 3 -- 0-3 seconds ahead
+
     --Spawn the explosion
-    magnitude = math.random()/8
-    printDebug("Explosion is at ",s.getTile(resultMatrix).name," as magnitude ",magnitude)
-    s.spawnExplosion(resultMatrix, magnitude)
+    --- @class ExplosionData
+    thisExplosionData = {
+        position = resultMatrix,
+        magnitude = math.random()/8
+    }
+    if g_savedata.queuedExplosions[g_savedata.tickCounter + travelTime] == nil then
+        g_savedata.queuedExplosions[g_savedata.tickCounter + travelTime] = {}
+    end
+    table.insert(g_savedata.queuedExplosions[g_savedata.tickCounter + travelTime], 1, thisExplosionData)
+end
+
+function flakMain.flakExplosion(explosionData)
+    magnitude = explosionData.magnitude
+    position = explosionData.position
+    d.printDebug("Explosion is at ",s.getTile(position).name," as magnitude ",magnitude)
+    s.spawnExplosion(position, magnitude)
+end
+
+function flakMain.executeQueuedExplosions()
+    queued = g_savedata.queuedExplosions[g_savedata.tickCounter]
+    if queued then
+        d.printDebug("Executing queued explosion")
+        for _, explosionData in pairs(queued) do
+            flakMain.flakExplosion(explosionData)
+        end
+        g_savedata.queuedExplosions[g_savedata.tickCounter] = nil
+    end
 end
 
 return flakMain
