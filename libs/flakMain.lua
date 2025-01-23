@@ -1,6 +1,7 @@
 flakMain = {}
 
 d = require("libs.debugging")
+taskService = require("libs.taskService")
 
 --- @param vehicle_id number
 --- @return boolean isFlak True if the vehicle has a IS_AI_FLAK sign on it
@@ -111,7 +112,10 @@ end
 function flakMain.calculateTravelTime(targetMatrix, flakMatrix)
     local distance = matrix.distance(targetMatrix, flakMatrix)
     local speed = g_savedata.settings.flakShellSpeed/time.second --The speed in m/s
-    return distance/speed
+    local travelTime = math.floor(distance/speed)
+    d.printDebug("Travel time is ",travelTime, "ticks (",travelTime/60," seconds) because seperation is ",distance,"m and the speed is ",g_savedata.settings.flakShellSpeed,"m/s"..
+        " (",speed,"m/tick)")
+    return travelTime
 end
 
 --- Calculate the position the flak should aim at to hit the target, accounting for t
@@ -129,10 +133,20 @@ function flakMain.calculateLead(flakMatrix, targetMatrix, lastTargetMatrix, time
     local vy = y1 - y2
     local vz = z1 - z2
 
+    --Have velocity account for the timeBetween
+    vx = vx/timeBetween
+    vy = vy/timeBetween
+    vz = vz/timeBetween
+
     -- Move the targetMatrix using the bullets travelTime and target velocity
+    x3,y3,z3 = matrix.position(targetMatrix)
     x = x1 + vx * travelTime
     y = y1 + vy * travelTime
     z = z1 + vz * travelTime
+
+    d.debugLabel("lead", targetMatrix, "Target", travelTime)
+    d.debugLabel("lead", lastTargetMatrix, "Last Target", travelTime)
+    d.debugLabel("lead", matrix.translation(x,y,z), "Lead", travelTime)
     return matrix.translation(x, y, z)
     
     --[[
@@ -184,50 +198,42 @@ function flakMain.fireFlak(sourceMatrix, targetMatrix) --Convert to using flakOb
     
     --Calculate accuracy
     local spread = 0
-    local altFactor = 10/(0.5 ^ (alt/250)) --10+(0.2*alt) 
+    local altFactor = 10/(0.5 ^ (alt/250)) --10+(0.2*alt)
+    d.printDebug("Alt factor: ",altFactor)
     local spread = altFactor
     local spread = spread * weatherMultiplier
     
     --Randomize the targetMatrix based on spread
     spread = math.floor(spread)
+    d.printDebug("Spread is ",spread)
     x = x + math.random(-spread, spread)
     alt = alt + math.random(-spread, spread)
     z = z + math.random(-spread, spread)
     local resultMatrix = matrix.translation(x,alt, z)
 
     --Randomize travel time alittle
-    local travelTime = flakMain.calculateTravelTime(targetMatrix, sourceMatrix)d
-    d.printDebug("Travel time is ",type(travelTime))
+    local travelTime = flakMain.calculateTravelTime(targetMatrix, sourceMatrix)
     travelTime = travelTime + math.random() * 3 -- 0-3 seconds ahead
-
+    
     --Spawn the explosion
     --- @class ExplosionData
     thisExplosionData = {
         position = resultMatrix,
         magnitude = math.random()/8
     }
-    if g_savedata.queuedExplosions[g_savedata.tickCounter + travelTime] == nil then
+    --[[if g_savedata.queuedExplosions[g_savedata.tickCounter + travelTime] == nil then
         g_savedata.queuedExplosions[g_savedata.tickCounter + travelTime] = {}
     end
-    table.insert(g_savedata.queuedExplosions[g_savedata.tickCounter + travelTime], 1, thisExplosionData)
+    table.insert(g_savedata.queuedExplosions[g_savedata.tickCounter + travelTime], 1, thisExplosionData)]]
+    TaskService:AddTask(flakMain.flakExplosion, travelTime, {thisExplosionData})
 end
 
 function flakMain.flakExplosion(explosionData)
+    d.printDebug("Running!")
     magnitude = explosionData.magnitude
     position = explosionData.position
     d.printDebug("Explosion is at ",s.getTile(position).name," as magnitude ",magnitude)
     s.spawnExplosion(position, magnitude)
-end
-
-function flakMain.executeQueuedExplosions()
-    queued = g_savedata.queuedExplosions[g_savedata.tickCounter]
-    if queued then
-        d.printDebug("Executing queued explosion")
-        for _, explosionData in pairs(queued) do
-            flakMain.flakExplosion(explosionData)
-        end
-        g_savedata.queuedExplosions[g_savedata.tickCounter] = nil
-    end
 end
 
 return flakMain

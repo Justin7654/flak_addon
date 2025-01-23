@@ -3,7 +3,7 @@
 --]]
 
 debugging = {}
-utils = require("libs.utils")
+utils = require("libs.util")
 
 function debugging.tickDebug()
     --Tick lead debug
@@ -43,10 +43,7 @@ function debugging.debugLabel(debugMode, position, text, length)
     local x,y,z = matrix.position(position)
     local ui_id = s.getMapID()
     server.setPopup(-1, ui_id, "", true, text, x,y,z, 9999)
-    if g_savedata.debugVariables.lead.mapLabels[g_savedata.tickCounter+length] == nil then
-        g_savedata.debugVariables.lead.mapLabels[g_savedata.tickCounter+length] = {}
-    end
-    table.insert(g_savedata.debugVariables.lead.mapLabels[g_savedata.tickCounter+length], 1, ui_id)
+    taskService:AddTask(server.removePopup, length, {-1, ui_id})
 end
 
 --Each argument is converted to a string and added together to make the message
@@ -56,6 +53,17 @@ function debugging.printDebug(...)
 	end
 	local msg = table.concat({...}, "")
 	s.announce("[Flak Debug]", msg)
+    debug.log("ICM FLAK DEBUG | (d.printDebug) "..msg)
+end
+
+--- @param ... any the error message
+function debugging.printWarning(...)
+    if not g_savedata.debug.warning then
+        return
+    end
+    local msg = table.concat({...}, "")
+    s.announce("[Flak Sys Warning]", msg)
+    debug.log("ICM FLAK WARNING | (d.printWarning) "..msg)
 end
 
 --- @param errType string the displayed error type
@@ -66,7 +74,9 @@ function debugging.printError(errType, ...)
     end
     local msg = table.concat({...}, "")
     s.announce("[Flak "..errType.." Error]", msg)
+    debug.log("ICM FLAK ERROR | (d.printError) "..msg)
 end
+
 
 --- @param mode string the debug mode to toggle
 --- @return boolean is_success True if the mode was toggled

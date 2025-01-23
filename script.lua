@@ -9,6 +9,7 @@ https://youtu.be/H8zPNMqVi2E?si=cixPLgSg4Ez3AXtc
 util = require("libs.util")
 d = require("libs.debugging")
 flakMain = require("libs.flakMain")
+taskService = require("libs.taskService")
 
 -- Data
 g_savedata = {
@@ -30,9 +31,9 @@ g_savedata = {
 	},
 	loadedFlak = {}, ---@type FlakData[]
 	loadedOther = {}, ---@type number[]
-	queuedExplosions = {}, ---@type table<number, ExplosionData[]>
 	debug = {
 		chat = false,
+		warning = true,
 		error = true,
 		lead = false,
 	},
@@ -70,11 +71,12 @@ function onTick(game_ticks)
 			if targetMatrix ~= nil and targetMatrix ~= flak.lastTargetMatrix then --Either not airborne or the AI doesnt have a target anymore. Dont fire
 				if source_is_success then
 					--Calculate lead
-					--leadMatrix = flakMain.calculateLead(sourceMatrix, targetMatrix, flak.lastTargetMatrix,  g_savedata.tickCounter-flak.lastTargetTime)
+					targetMatrix = flakMain.calculateLead(sourceMatrix, targetMatrix, flak.lastTargetMatrix,  g_savedata.tickCounter-flak.lastTargetTime)
 					--d.debugLabel("lead", leadMatrix, "Lead", rate)
 					--Fire the flak
 					flakMain.fireFlak(sourceMatrix, targetMatrix)
 					flak.lastTargetMatrix = targetMatrix
+					flak.lastTargetTime = g_savedata.tickCounter
 				else
 					d.printError("Fire", "Flak vehicle ",flak.vehicle_id," failed to get position")
 				end
@@ -93,8 +95,8 @@ function onTick(game_ticks)
 		end
 	end
 
+	taskService:handleTasks()
 	--d.tickDebug()
-	flakMain.executeQueuedExplosions()
 end
 
 function onVehicleLoad(vehicle_id)
@@ -136,10 +138,15 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 				s.announce("[Flak Commands]", "Debug mode not found; available modes:\nchat\nerror\nlead")
 			end
 		end
-	elseif command == "reset" then
+	elseif command == "clear" or command == "reset" then
 		if args[1] == "tracking" then
 			g_savedata.loadedFlak = {}
 			s.announce("[Flak Commands]", "All memory of flak vehicles has been reset")
+		elseif args[1] == "tasks" then
+			taskService:HardReset()
+			s.announce("[Flak Commands]", "TaskService has been reset to initial state successfully")
+		else
+			s.announce("[Flak Commands]", "Available reset commands:\ntracking\ntasks")
 		end
 	elseif command == "sanity" then
 		flakMain.verifyFlakList()
