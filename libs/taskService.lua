@@ -1,14 +1,10 @@
-d = require("libs.debugging")
-flakMain = require("libs.flakMain")
-
-TaskService = {}
-
-registeredCallbacks = {
-    removePopup = server.removePopup,
-    flakExplosion = flakMain.flakExplosion
+TaskService = {
+    registeredCallbacks = {
+        removePopup = server.removePopup,
+    }
 }
 
---- @alias callbackID "removePopup" | "flakExplosion"
+--- @alias callbackID "removePopup" | "flakExplosion"|function
 
 --- @param callbackID callbackID the registered ID of the function to call when the task is done
 --- @param duration number the duration of the task in ticks
@@ -31,7 +27,7 @@ end
 
 --- @param id string the backup name of the task to get the callback from
 function TaskService:GetCallbackFromID(id)
-    local callback = registeredCallbacks[id]
+    local callback = TaskService.registeredCallbacks[id]
     if callback == nil then
         d.printError("TaskService:GetCallbackFromID", "No callback found for id ", id)
     end
@@ -55,10 +51,21 @@ function TaskService:handleTasks()
     local tickCounter = g_savedata.tickCounter
     for id, task in pairs(TaskService:GetTasks()) do
         if tickCounter >= math.floor(task.endTime) then
-            local callbackFunc = TaskService:GetCallbackFromID(task.callback)
-            if callbackFunc ~= nil then
+            --Convert callbackID to a function
+            local callbackID = task.callback
+            local callbackFunc = nil
+            if type(callbackID) == "string" then
+                callbackFunc = TaskService:GetCallbackFromID(callbackID)
+            elseif type(callbackID == "function") then
+                callbackFunc = callbackID
+            else
+                d.printError("TaskService:handleTasks", "Invalid callback type for task ", type(callbackID))
+            end
+            --Run the function
+            if callbackFunc ~= nil and type(callbackFunc) == "function" then
                 callbackFunc(table.unpack(task.arguments))
             end
+            --Delete the task
             g_savedata.tasks[id] = nil
         end
     end

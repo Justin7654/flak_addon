@@ -3,7 +3,23 @@
 --]]
 
 debugging = {}
-utils = require("libs.util")
+
+function debugging.tickDebugs()
+    if g_savedata.debug.task then
+        if not g_savedata.taskDebugUI then
+            g_savedata.taskDebugUI = s.getMapID()
+        end
+        local taskDebugText = "Tasks: \n"
+        for id, task in pairs(g_savedata.tasks) do
+            taskDebugText = taskDebugText.."Task "..task.id..":\n"..g_savedata.tickCounter.."/"..task.endTime.."\nRemaining: "..tostring(g_savedata.tickCounter-task.endTime).."\nType: "..type(task.callback).."\n"
+        end
+        server.setPopupScreen(-1, g_savedata.taskDebugUI, "", true, taskDebugText, 0.6, 0)
+    elseif g_savedata.taskDebugUI then
+        --server.setPopupScreen(-1, g_savedata.taskDebugUI, "", false, "", 0.6, 0)
+        server.removePopup(-1, g_savedata.taskDebugUI)
+        g_savedata.taskDebugUI = nil
+    end
+end
 
 --- @param debugMode string the debug mode to check
 --- @param position SWMatrix the position to place the label

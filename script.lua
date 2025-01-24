@@ -10,16 +10,17 @@ util = require("libs.util")
 d = require("libs.debugging")
 flakMain = require("libs.flakMain")
 taskService = require("libs.taskService")
+aiming = require("libs.ai.aiming")
 
 -- Data
 g_savedata = {
 	tickCounter = 0,
 	settings = {
 		ignoreWeather = property.checkbox("Weather does not affect flak accuracy",  false),
-		flakShellSpeed = property.slider("Flak Shell Speed (m/s)", 100, 1000, 100, 300),
+		flakShellSpeed = property.slider("Flak Shell Speed (m/s)", 100, 1000, 100, 500),
 		fireRate = property.slider("Flak Fire Rate (seconds between shots)", 1, 20, 1, 4),
 		minAlt = property.slider("Minimum Fire Altitude", 100, 700, 50, 200),
-		flakAccuracyMult = property.slider("Flak Accuracy Multiplier", 0.1, 2, 0.1, 1),
+		flakAccuracyMult = property.slider("Flak Accuracy Multiplier", 0.5, 1.5, 0.1, 1),
 	},
 	fun = {
 		noPlayerIsSafe = {
@@ -37,9 +38,11 @@ g_savedata = {
 		warning = true,
 		error = true,
 		lead = false,
+		task = false,
 	},
 	tasks = {},
 	taskCurrentID = 0,
+	taskDebugUI = nil,
 }
 
 time = { -- the time unit in ticks
@@ -55,26 +58,46 @@ s = server
 ---@param game_ticks number the number of ticks since the last onTick call (normally 1, while sleeping 400.)
 function onTick(game_ticks)
     g_savedata.tickCounter = g_savedata.tickCounter + 1
+
 	--Loop through all flak once every 10 seconds and if they are targetting a player higher than 150m then
-	local rate = time.second*g_savedata.settings.fireRate
+	local updateRate = time.second
+	local fireRate = time.second*g_savedata.settings.fireRate
     for index, flak in pairs(g_savedata.spawnedFlak) do
-		d.printDebug(index)
+		--Check if its time to update target data
+		local updated_pos = false
+		if isTickID(flak.tick_id, 60) then
+			local targetMatrix = flakMain.getFlakTarget(flak)
+			if targetMatrix ~= nil then
+				aiming.addPositionData(flak.targetPositionData, targetMatrix)
+				updated_pos = true
+			else
+				flak.targetPositionData = aiming.newRecentPositionData() --Reset it
+			end
+		end
+
 		--Check if its time to fire
-		if isTickID(flak.tick_id, rate) then
-			d.printDebug("Fire")
+		if isTickID(flak.tick_id, fireRate) then
 			--Check if theres any targets
 			local sourceMatrix, source_is_success = server.getVehiclePos(flak.vehicle_id)
 			local targetMatrix = flakMain.getFlakTarget(flak)
 			
-			if targetMatrix ~= nil and targetMatrix ~= flak.lastTargetMatrix then --Either not airborne or the AI doesnt have a target anymore. Dont fire
+			if targetMatrix ~= nil and aiming.isPositionDataFull(flak.targetPositionData) then --Either not airborne or the AI doesnt have a target anymore. Dont fire
 				if source_is_success then
+					--Make sure position was updated this tick
+					if not updated_pos then
+						d.printWarning("Did not update position this tick!")
+					end
+
 					--Calculate lead
-					leadMatrix = flakMain.calculateLead(sourceMatrix, targetMatrix, flak.lastTargetMatrix,  g_savedata.tickCounter-flak.lastTargetTime)
-					
+					local travelTime = flakMain.calculateTravelTime(targetMatrix, sourceMatrix)
+					local secondLead = aiming.predictPosition(flak.targetPositionData, travelTime)
+					if secondLead ~= nil then d.debugLabel("lead", secondLead, "Advanced Lead", travelTime) end
+					local leadMatrix = flakMain.calculateLead(flak)
+
 					--Fire the flak
-					flakMain.fireFlak(sourceMatrix, leadMatrix)
-					flak.lastTargetMatrix = targetMatrix
-					flak.lastTargetTime = g_savedata.tickCounter
+					if leadMatrix then
+						flakMain.fireFlak(sourceMatrix, leadMatrix)
+					end
 				else
 					d.printError("Fire", "Flak vehicle ",flak.vehicle_id," failed to get position")
 				end
@@ -94,6 +117,7 @@ function onTick(game_ticks)
 	end
 
 	taskService:handleTasks()
+	d.tickDebugs()
 end
 
 function onVehicleLoad(vehicle_id)
@@ -106,6 +130,7 @@ function onVehicleLoad(vehicle_id)
 		flakData.simulating = true
 		d.printDebug("Set flak ",flakData.vehicle_id," to simulating")
 	end
+	d.printDebug("End callback")
 end
 
 function onGroupSpawn(group_id, peer_id, x, y, z, group_cost)
@@ -213,6 +238,8 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		end
 		s.announce("[Flak Commands]", "Tasks: "..text)
 		debug.log(text)
+	elseif command == "viewFlak" then
+		s.announce("[Flak Commands]", "Flak Amount: "..#g_savedata.spawnedFlak)
 	end
 end
 
