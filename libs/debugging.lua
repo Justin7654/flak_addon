@@ -17,7 +17,6 @@ function debugging.tickDebugs()
     elseif g_savedata.taskDebugUI then
         --server.setPopupScreen(-1, g_savedata.taskDebugUI, "", false, "", 0.6, 0)
         server.removePopup(-1, g_savedata.taskDebugUI)
-        g_savedata.taskDebugUI = nil
     end
 end
 

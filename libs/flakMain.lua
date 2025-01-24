@@ -3,8 +3,6 @@ flakMain = {}
 d = require("libs.debugging")
 taskService = require("libs.taskService")
 
-taskService.registeredCallbacks["flakExplosion"] = flakMain.flakExplosion
-
 --- @param vehicle_id number
 --- @return boolean isFlak True if the vehicle has a IS_AI_FLAK sign on it
 function flakMain.isVehicleFlak(vehicle_id)
@@ -21,16 +19,24 @@ end
 --- Adds the specified vehicle to the loaded flak list.
 --- @param vehicle_id number
 function flakMain.addVehicleToSpawnedFlak(vehicle_id)
+    local flak_pos, pos_success = s.getVehiclePos(vehicle_id)
+    if not pos_success then
+        d.printError("Could not get position of flak vehicle ",vehicle_id)
+        return
+    end
+
     ---@class FlakData
 	---@field vehicle_id number the vehicle_id of the flak vehicle
 	---@field tick_id number a random number between 0 and the fire rate for the flak
     ---@field simulating boolean if the flak vehicle is currently simulating
+    ---@field position SWMatrix the position of the flak vehicle at the time of spawn
     ---@field pseudoTrackingPlayer number|nil the player id the flak is tracking if its unloaded
     ---@field targetPositionData RecentPositionData the recent position data of the flak target
     local flakData = {
         vehicle_id = vehicle_id,
         tick_id = math.random(0, time.second*g_savedata.settings.fireRate-1),
-        simulating = s.getVehicleSimulating(vehicle_id),
+        simulating = false,
+        position = flak_pos,
         pseudoTrackingPlayer = nil,
         targetPositionData = {}
     }
@@ -111,7 +117,7 @@ function flakMain.getFlakTarget(flakData)
         end
     else
         --If the flak vehicle is not simulating, try to find a target on our own
-        local pseudoTarget = getPseudoTarget(flakData)
+        local pseudoTarget = flakMain.getPseudoTarget(flakData)
         return pseudoTarget
     end
 end
@@ -119,18 +125,17 @@ end
 --- Trys to find a target to aim at even when the flak vehicle is unloaded.
 --- @param Flak FlakData the flak vehicle to get the pseudo target of
 --- @return SWMatrix|nil targetMatrix the target location
-function getPseudoTarget(Flak)
+function flakMain.getPseudoTarget(Flak)
     local flakVehicleID = Flak.vehicle_id
-    local flakPos = s.getVehiclePos(flakVehicleID)
+    local flakPos = Flak.position
     local sightDistance = flakMain.calculateFlakSight(flakPos)
 
     --Check if the previous player we tracked is still in range
     if Flak.pseudoTrackingPlayer ~= nil then 
         --Check if the player is still in range
         local playerPos, success = server.getPlayerPos(Flak.pseudoTrackingPlayer)
-        if success and playerPos[14] > g_savedata.settings.minAlt and matrix.distance(flakPos, playerPos) < sightDistance then
+        if success and playerPos[14] > flakMain.calculateMinAlt(Flak,playerPos) and matrix.distance(flakPos, playerPos) < sightDistance then
             --This player is still in range. Keep targetting them
-            d.printDebug("Pseudo flak is still targetting player ",Flak.pseudoTrackingPlayer)
             return playerPos
         else
             --This player is no longer in range. Stop targetting them
@@ -167,6 +172,18 @@ function flakMain.calculateFlakSight(location)
     return BASE_RADIUS * (1 - (weather.fog * 0.2)) * (0.8 + (math.min(clock.daylight_factor*1.8, 1) * 0.2)) * (1 - (weather.rain * 0.2))
 end
 
+--- @param flak FlakData The flak object, used to get the position
+--- @param searchPosition SWMatrix? The position to calculate the minimum altitude for. If left blank, uses the flak's last target position
+--- @return number minAltitude the minimum altitude the flak can fire at
+function flakMain.calculateMinAlt(flak, searchPosition)
+    if searchPosition == nil then
+        searchPosition = flak.targetPositionData[#flak.targetPositionData].pos
+    end
+    local flakPosition = flak.position
+    local XZDistance =  util.calculateEuclideanDistance(flakPosition[13], searchPosition[13], flakPosition[15], searchPosition[15])
+    return g_savedata.settings.minAlt + (XZDistance/30)
+end
+
 --- Calculate the time it will take for the flak to reach the target
 --- @param targetMatrix SWMatrix the matrix of the target
 --- @param flakMatrix SWMatrix the matrix of the flak vehicle
@@ -193,8 +210,10 @@ function flakMain.calculateLead(flak)
     local lead = aiming.predictPosition(flak.targetPositionData, travelTime)
     
     --Refine it iteratively to account for the fact that the lead position might take longer/shorter to get to
-    for i=1, 4 do
+    local prevTravelTime = travelTime
+    for i=1, 3 do
         travelTime = flakMain.calculateTravelTime(lead, flakPosition)
+        if travelTime == prevTravelTime then d.printDebug("Exiting early on iteration ",i); break end --Exit out early if we hit the point where its fully refined
         lead = aiming.predictPosition(flak.targetPositionData, travelTime)
     end
 
@@ -268,7 +287,7 @@ function flakMain.fireFlak(sourceMatrix, targetMatrix) --Convert to using flakOb
     local spread = altFactor
     local spread = spread * weatherMultiplier
     spread = spread-- / g_savedata.settings.flakAccuracyMult
-    
+
     if spread == math.huge then
         d.printError("Fire", "Spread is infinite! Defaulting to 10. AltFactor: ",altFactor,", weatherMultiplier: ",weatherMultiplier)
         spread = 10
@@ -276,7 +295,6 @@ function flakMain.fireFlak(sourceMatrix, targetMatrix) --Convert to using flakOb
 
     --Randomize the targetMatrix based on spread
     spread = math.floor(spread)
-    d.printDebug("Spread is ",spread)
     x = x + math.random(-spread, spread)
     alt = alt + math.random(-spread, spread)
     z = z + math.random(-spread, spread)
@@ -292,7 +310,7 @@ function flakMain.fireFlak(sourceMatrix, targetMatrix) --Convert to using flakOb
         position = resultMatrix,
         magnitude = math.random()/8
     }
-    TaskService:AddTask(flakMain.flakExplosion, travelTime, {thisExplosionData})
+    TaskService:AddTask("flakExplosion", travelTime, {thisExplosionData})
 end
 
 function flakMain.flakExplosion(explosionData)

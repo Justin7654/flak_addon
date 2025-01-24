@@ -19,7 +19,7 @@ g_savedata = {
 		ignoreWeather = property.checkbox("Weather does not affect flak accuracy",  false),
 		flakShellSpeed = property.slider("Flak Shell Speed (m/s)", 100, 1000, 100, 500),
 		fireRate = property.slider("Flak Fire Rate (seconds between shots)", 1, 20, 1, 4),
-		minAlt = property.slider("Minimum Fire Altitude", 100, 700, 50, 200),
+		minAlt = property.slider("Minimum Fire Altitude Base", 100, 700, 50, 200),
 		flakAccuracyMult = property.slider("Flak Accuracy Multiplier", 0.5, 1.5, 0.1, 1),
 	},
 	fun = {
@@ -43,6 +43,13 @@ g_savedata = {
 	tasks = {},
 	taskCurrentID = 0,
 	taskDebugUI = nil,
+	debugLabelUI = {},
+}
+
+--- @alias callbackID "removePopup" | "flakExplosion"
+registeredTaskCallbacks = {
+	removePopup = server.removePopup,
+	flakExplosion = flakMain.flakExplosion
 }
 
 time = { -- the time unit in ticks
@@ -78,28 +85,26 @@ function onTick(game_ticks)
 		--Check if its time to fire
 		if isTickID(flak.tick_id, fireRate) then
 			--Check if theres any targets
-			local sourceMatrix, source_is_success = server.getVehiclePos(flak.vehicle_id)
+			local sourceMatrix = flak.position
 			local targetMatrix = flakMain.getFlakTarget(flak)
 			
 			if targetMatrix ~= nil and aiming.isPositionDataFull(flak.targetPositionData) then --Either not airborne or the AI doesnt have a target anymore. Dont fire
-				if source_is_success then
-					--Make sure position was updated this tick
-					if not updated_pos then
-						d.printWarning("Did not update position this tick!")
-					end
+				--Make sure position was updated this tick
+				if not updated_pos then
+					d.printWarning("Did not update position this tick!")
+				end
 
-					--Calculate lead
+				--Calculate lead
+				if g_savedata.debug.lead then
 					local travelTime = flakMain.calculateTravelTime(targetMatrix, sourceMatrix)
 					local secondLead = aiming.predictPosition(flak.targetPositionData, travelTime)
 					if secondLead ~= nil then d.debugLabel("lead", secondLead, "Advanced Lead", travelTime) end
-					local leadMatrix = flakMain.calculateLead(flak)
-
-					--Fire the flak
-					if leadMatrix then
-						flakMain.fireFlak(sourceMatrix, leadMatrix)
-					end
-				else
-					d.printError("Fire", "Flak vehicle ",flak.vehicle_id," failed to get position")
+				end
+				local leadMatrix = flakMain.calculateLead(flak)
+				
+				--Fire the flak
+				if leadMatrix then
+					flakMain.fireFlak(sourceMatrix, leadMatrix)
 				end
 			end
 		end

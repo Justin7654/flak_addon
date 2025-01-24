@@ -1,10 +1,4 @@
-TaskService = {
-    registeredCallbacks = {
-        removePopup = server.removePopup,
-    }
-}
-
---- @alias callbackID "removePopup" | "flakExplosion"|function
+TaskService = {}
 
 --- @param callbackID callbackID the registered ID of the function to call when the task is done
 --- @param duration number the duration of the task in ticks
@@ -27,7 +21,7 @@ end
 
 --- @param id string the backup name of the task to get the callback from
 function TaskService:GetCallbackFromID(id)
-    local callback = TaskService.registeredCallbacks[id]
+    local callback = registeredTaskCallbacks[id]
     if callback == nil then
         d.printError("TaskService:GetCallbackFromID", "No callback found for id ", id)
     end
@@ -56,10 +50,9 @@ function TaskService:handleTasks()
             local callbackFunc = nil
             if type(callbackID) == "string" then
                 callbackFunc = TaskService:GetCallbackFromID(callbackID)
-            elseif type(callbackID == "function") then
-                callbackFunc = callbackID
             else
                 d.printError("TaskService:handleTasks", "Invalid callback type for task ", type(callbackID))
+                goto continue_handleTasks
             end
             --Run the function
             if callbackFunc ~= nil and type(callbackFunc) == "function" then
@@ -67,6 +60,7 @@ function TaskService:handleTasks()
             end
             --Delete the task
             g_savedata.tasks[id] = nil
+            ::continue_handleTasks::
         end
     end
 end
