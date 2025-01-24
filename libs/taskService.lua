@@ -1,37 +1,51 @@
 d = require("libs.debugging")
+flakMain = require("libs.flakMain")
 
-TaskService = {
-    _tasks = {}, --Used internally
-    _currentID = 0, --Used internally
+TaskService = {}
+
+registeredCallbacks = {
+    removePopup = server.removePopup,
+    flakExplosion = flakMain.flakExplosion
 }
 
---- @param callback function the function to call when the task is done
+--- @alias callbackID "removePopup" | "flakExplosion"
+
+--- @param callbackID callbackID the registered ID of the function to call when the task is done
 --- @param duration number the duration of the task in ticks
 --- @param arguments table the arguments to pass to the callback
 --- @return Task
-function TaskService:AddTask(callback, duration, arguments)
+function TaskService:AddTask(callbackID, duration, arguments)
     --- @class Task
     local task = {
-        id = TaskService._currentID + 1,
-        callback = callback,
+        id = g_savedata.taskCurrentID + 1,
+        callback = callbackID,
         endTime = g_savedata.tickCounter + math.floor(duration),
         arguments = arguments,
         startedAt = g_savedata.tickCounter
     }
-    TaskService._currentID = task.id
-    TaskService._currentID = TaskService._currentID + 1
-    TaskService._tasks[task.id] = task
+    g_savedata.taskCurrentID = task.id
+    g_savedata.taskCurrentID = g_savedata.taskCurrentID + 1
+    g_savedata.tasks[task.id] = task
     return task
+end
+
+--- @param id string the backup name of the task to get the callback from
+function TaskService:GetCallbackFromID(id)
+    local callback = registeredCallbacks[id]
+    if callback == nil then
+        d.printError("TaskService:GetCallbackFromID", "No callback found for id ", id)
+    end
+    return callback
 end
 
 --- @return table<integer, Task>
 function TaskService:GetTasks()
-    return TaskService._tasks
+    return g_savedata.tasks
 end
 
 function TaskService:HardReset()
-    TaskService._tasks = {}
-    TaskService._currentID = 0
+    g_savedata.tasks = {}
+    g_savedata.taskCurrentID = 0
     d.printWarning("The task system has been hard reset. Any waiting tasks have been lost and will never be ran. This can cause bugs")
 end
 
@@ -41,8 +55,11 @@ function TaskService:handleTasks()
     local tickCounter = g_savedata.tickCounter
     for id, task in pairs(TaskService:GetTasks()) do
         if tickCounter >= math.floor(task.endTime) then
-            task.callback(table.unpack(task.arguments))
-            TaskService._tasks[id] = nil
+            local callbackFunc = TaskService:GetCallbackFromID(task.callback)
+            if callbackFunc ~= nil then
+                callbackFunc(table.unpack(task.arguments))
+            end
+            g_savedata.tasks[id] = nil
         end
     end
 end

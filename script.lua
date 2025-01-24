@@ -16,7 +16,7 @@ g_savedata = {
 	tickCounter = 0,
 	settings = {
 		ignoreWeather = property.checkbox("Weather does not affect flak accuracy",  false),
-		flakShellSpeed = property.slider("Flak Shell Speed (m/s)", 200, 1000, 100, 500),
+		flakShellSpeed = property.slider("Flak Shell Speed (m/s)", 100, 1000, 100, 300),
 		fireRate = property.slider("Flak Fire Rate (seconds between shots)", 1, 20, 1, 4),
 		minAlt = property.slider("Minimum Fire Altitude", 100, 700, 50, 200),
 		flakAccuracyMult = property.slider("Flak Accuracy Multiplier", 0.1, 2, 0.1, 1),
@@ -29,19 +29,17 @@ g_savedata = {
 			prevPlayerPositions = {} ---@type table<number, SWMatrix>
 		}
 	},
-	loadedFlak = {}, ---@type FlakData[]
-	loadedOther = {}, ---@type number[]
+	spawnedFlak = {}, ---@type FlakData[]
+	loadedVehicles = {}, ---@type number[]
+	vehicleOwners = {},
 	debug = {
 		chat = false,
 		warning = true,
 		error = true,
 		lead = false,
 	},
-	debugVariables = {
-		lead = {
-			mapLabels = {} ---@type table<number, number[]>
-		}
-	}
+	tasks = {},
+	taskCurrentID = 0,
 }
 
 time = { -- the time unit in ticks
@@ -59,22 +57,22 @@ function onTick(game_ticks)
     g_savedata.tickCounter = g_savedata.tickCounter + 1
 	--Loop through all flak once every 10 seconds and if they are targetting a player higher than 150m then
 	local rate = time.second*g_savedata.settings.fireRate
-    for index, flak in pairs(g_savedata.loadedFlak) do
-		
+    for index, flak in pairs(g_savedata.spawnedFlak) do
+		d.printDebug(index)
 		--Check if its time to fire
 		if isTickID(flak.tick_id, rate) then
-
+			d.printDebug("Fire")
 			--Check if theres any targets
 			local sourceMatrix, source_is_success = server.getVehiclePos(flak.vehicle_id)
-			local targetMatrix = flakMain.getFlakTarget(flak.vehicle_id)
+			local targetMatrix = flakMain.getFlakTarget(flak)
 			
 			if targetMatrix ~= nil and targetMatrix ~= flak.lastTargetMatrix then --Either not airborne or the AI doesnt have a target anymore. Dont fire
 				if source_is_success then
 					--Calculate lead
-					targetMatrix = flakMain.calculateLead(sourceMatrix, targetMatrix, flak.lastTargetMatrix,  g_savedata.tickCounter-flak.lastTargetTime)
-					--d.debugLabel("lead", leadMatrix, "Lead", rate)
+					leadMatrix = flakMain.calculateLead(sourceMatrix, targetMatrix, flak.lastTargetMatrix,  g_savedata.tickCounter-flak.lastTargetTime)
+					
 					--Fire the flak
-					flakMain.fireFlak(sourceMatrix, targetMatrix)
+					flakMain.fireFlak(sourceMatrix, leadMatrix)
 					flak.lastTargetMatrix = targetMatrix
 					flak.lastTargetTime = g_savedata.tickCounter
 				else
@@ -96,30 +94,58 @@ function onTick(game_ticks)
 	end
 
 	taskService:handleTasks()
-	--d.tickDebug()
 end
 
 function onVehicleLoad(vehicle_id)
-	data, is_success = server.getVehicleSign(vehicle_id, "IS_AI_FLAK")
-	if is_success and not flakMain.vehicleIsInLoadedFlak(vehicle_id) then
-		flakMain.addVehicleToLoadedFlak(vehicle_id)
-	elseif not is_success then
-		table.insert(g_savedata.loadedOther, 1, vehicle_id)
+	table.insert(g_savedata.loadedVehicles, vehicle_id)
+	d.printDebug("Added vehicle ",vehicle_id," to loaded vehicles list")
+
+	--Change flak simulation status
+	local isFlak, flakData = flakMain.vehicleIsInSpawnedFlak(vehicle_id)
+	if isFlak and flakData then
+		flakData.simulating = true
+		d.printDebug("Set flak ",flakData.vehicle_id," to simulating")
+	end
+end
+
+function onGroupSpawn(group_id, peer_id, x, y, z, group_cost)
+	--Add to flak list if its flak
+	local vehicle_group = s.getVehicleGroup(group_id)
+	local main_vehicle_id = vehicle_group[1]
+	if flakMain.isVehicleFlak(main_vehicle_id) then
+		flakMain.addVehicleToSpawnedFlak(main_vehicle_id)		
+	end
+	--Set vehicle owners
+	for _, vehicle_id in pairs(vehicle_group) do
+		g_savedata.vehicleOwners[vehicle_id] = peer_id
 	end
 end
 
 function onVehicleUnload(vehicle_id)
-	is_success = flakMain.removeVehicleFromLoadedFlak(vehicle_id)
-	if not is_success then
-		util.removeFromList(g_savedata.loadedOther, vehicle_id)
+	local index = util.removeFromList(g_savedata.loadedVehicles, vehicle_id)
+	if index == -1 then
+		d.printWarning("Could not remove ",vehicle_id," from loaded vehicles list when it unlaoded. Not found")
+	end
+
+	--Change flak simulating status
+	local isFlak, flakData = flakMain.vehicleIsInSpawnedFlak(vehicle_id)
+	if isFlak and flakData then
+		flakData.simulating = false
+		d.printDebug("Set flak ",flakData.vehicle_id," to not simulating")
 	end
 end
 
 function onVehicleDespawn(vehicle_id)
-	is_success = flakMain.removeVehicleFromLoadedFlak(vehicle_id)
-	if not is_success then
-		util.removeFromList(g_savedata.loadedOther, vehicle_id)
+	--Attempt to remove it from the flak list
+	is_success = flakMain.removeVehicleFromFlak(vehicle_id)
+	--Attempt to remove it from the loadedVehicles list
+	local i = util.removeFromList(g_savedata.loadedVehicles, vehicle_id)
+	if i ~= -1 then
+		d.printDebug("Removed vehicle ",vehicle_id," from loaded vehicles list")
 	end
+
+	--Remove from player vehicles
+	g_savedata.vehicleOwners[vehicle_id] = nil
 end
 
 function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, command, ...)
@@ -140,8 +166,8 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		end
 	elseif command == "clear" or command == "reset" then
 		if args[1] == "tracking" then
-			g_savedata.loadedFlak = {}
-			s.announce("[Flak Commands]", "All memory of flak vehicles has been reset")
+			g_savedata.loadedVehicles = {}
+			s.announce("[Flak Commands]", "All memory of loaded vehicles has been reset")
 		elseif args[1] == "tasks" then
 			taskService:HardReset()
 			s.announce("[Flak Commands]", "TaskService has been reset to initial state successfully")
@@ -150,8 +176,6 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		end
 	elseif command == "sanity" then
 		flakMain.verifyFlakList()
-	elseif command == "num" then
-		s.announce("[Flak Commands]", "There are currently "..#g_savedata.loadedFlak.." flak vehicles loaded")
 	elseif command == "event" then
 		if string.lower(args[1]) == "noplayerissafe" then
 			g_savedata.fun.noPlayerIsSafe.active = not g_savedata.fun.noPlayerIsSafe.active
@@ -167,9 +191,28 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		else
 			s.announce("[Flak Commands]", "Event not found; available events:\nNoPlayerIsSafe <difficulty>")
 		end
-	elseif command == "manBulletSpeed" and arg[1] then
+	elseif command == "manbulletspeed" and arg[1] then
 		g_savedata.settings.flakShellSpeed = tonumber(args[1])
 		s.announce("[Flak Commands]", "Flak shell speed set to "..g_savedata.settings.flakShellSpeed.." m/s by "..s.getPlayerName(user_peer_id))
+	elseif command == "checkowners" then
+		for vehicle_id, owner in pairs(g_savedata.vehicleOwners) do
+			if s.getVehicleSimulating(vehicle_id) then
+				local position = s.getVehiclePos(vehicle_id)
+				d.debugLabel("none", position, tostring(owner), 5*time.second)
+			end
+		end
+	elseif command == "viewtasks" then
+		local text = ""
+		local tasks = taskService:GetTasks()
+		for _, task in pairs(tasks) do
+			text = text.."\nTask "..task.id..": \n - Started At: "..tostring(task.startedAt).."\n - Ends At: "..tostring(task.endTime)
+			text = text.."\n - Time elapsed: "..tostring(g_savedata.tickCounter - task.startedAt)
+		end
+		if text == "" then
+			text = "No tasks are currently running"
+		end
+		s.announce("[Flak Commands]", "Tasks: "..text)
+		debug.log(text)
 	end
 end
 

@@ -22,7 +22,7 @@ end
 ---@return table<number>
 function util.getVehiclesNear(location, distance)
     local vehicles = {}
-    for i, vehicle in pairs(g_savedata.loadedOther) do
+    for i, vehicle in pairs(g_savedata.loadedVehicles) do
         local transform_matrix, success = server.getVehiclePos(vehicle)
         if success then
             if matrix.distance(location, transform_matrix) < distance then
@@ -30,11 +30,12 @@ function util.getVehiclesNear(location, distance)
             end
         end
     end
+	return vehicles
 end
 
 ---@param list table the list to search
 ---@param value any the value to remove
----@return number the index of the removed value, if no values was removed then its -1
+---@return number index the index of the removed value, if no values was removed then its -1
 ---Removes the first instance of the value from the given list
 function util.removeFromList(list, value)
     for i, v in pairs(list) do
@@ -81,11 +82,17 @@ function matrix.calculateAcceleration(matrix1, matrix2, matrix3, ticks_between)
 	return (v1-v2)/(ticks_between/60)
 end
 
+---@diagnostic disable-next-line: undefined-doc-param
 ---@param x1 number x coordinate of position 1
+---@diagnostic disable-next-line: undefined-doc-param
 ---@param x2 number x coordinate of position 2
+---@diagnostic disable-next-line: undefined-doc-param
 ---@param z1 number z coordinate of position 1
+---@diagnostic disable-next-line: undefined-doc-param
 ---@param z2 number z coordinate of position 2
+---@diagnostic disable-next-line: undefined-doc-param
 ---@param y1 number? y coordinate of position 1 (exclude for 2D distance, include for 3D distance)
+---@diagnostic disable-next-line: undefined-doc-param
 ---@param y2 number? y coordinate of position 2 (exclude for 2D distance, include for 3D distance)
 ---@return number distance the euclidean distance between position 1 and position 2
 function util.calculateEuclideanDistance(...)
@@ -104,5 +111,19 @@ function util.calculateEuclideanDistance(...)
 	return math.sqrt(rx*rx+ry*ry+rz*rz)
 end
 
+function util.hasTag(tags, tag)
+	if type(tags) ~= "table" then
+		d.printError("(Tags.has) was expecting a table, but got a "..type(tags).." instead! searching for tag: ",tag)
+		return false
+	end
+
+	for tag_index = 1, #tags do
+		if tags[tag_index] == tag then
+			return true
+		end
+	end
+
+	return false
+end
 
 return util
