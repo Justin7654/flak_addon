@@ -2,13 +2,11 @@
   Handles debugging of the addon
 --]]
 
+
 debugging = {}
 
 function debugging.tickDebugs()
     if g_savedata.debug.task then
-        if not g_savedata.taskDebugUI then
-            g_savedata.taskDebugUI = s.getMapID()
-        end
         local taskDebugText = "Tasks: \n"
         for id, task in pairs(g_savedata.tasks) do
             taskDebugText = taskDebugText.."Task "..task.id..":\n"..g_savedata.tickCounter.."/"..task.endTime.."\nRemaining: "..tostring(g_savedata.tickCounter-task.endTime).."\nType: "..type(task.callback).."\n"
@@ -33,10 +31,21 @@ function debugging.debugLabel(debugMode, position, text, length)
         debugging.printWarning("(debugging.debugLabel) expected number for length but got ",type(length),". Defaulted to 100")
         length = 100
     end
+    --Get the UI_ID
+    local ui_id = nil
+    if #g_savedata.debugLabelUI > 0 then
+        ui_id = table.remove(g_savedata.debugLabelUI)
+    else
+        ui_id = s.getMapID()
+    end
     local x,y,z = matrix.position(position)
-    local ui_id = s.getMapID()
-    server.setPopup(-1, ui_id, "", true, text, x,y,z, 2000)
-    taskService:AddTask("removePopup", length, {-1, ui_id})
+    server.setPopup(-1, ui_id, "", true, text, x,y,z, 1200)
+    taskService:AddTask("freeDebugLabel", length, {-1, ui_id})
+end
+
+function debugging.freeDebugLabel(peer_id, ui_id)
+    server.removePopup(peer_id, ui_id)
+    table.insert(g_savedata.debugLabelUI, ui_id)
 end
 
 --Each argument is converted to a string and added together to make the message

@@ -40,15 +40,16 @@ g_savedata = {
 		lead = false,
 		task = false,
 	},
-	tasks = {},
-	taskCurrentID = 0,
-	taskDebugUI = nil,
-	debugLabelUI = {},
+	tasks = {}, --List of all tasks
+	taskCurrentID = 0, --The current ID for tasks
+	taskDebugUI = server.getMapID(), --The UI_ID for the task debug UI screen
+	debugLabelUI = {}, --UI_IDs for debug labels that are not in use
+	debugAI = {} --Used by debugging AI vehicles. Character IDs
 }
 
---- @alias callbackID "removePopup" | "flakExplosion"
+--- @alias callbackID "freeDebugLabel" | "flakExplosion"
 registeredTaskCallbacks = {
-	removePopup = server.removePopup,
+	freeDebugLabel = d.freeDebugLabel,
 	flakExplosion = flakMain.flakExplosion
 }
 
@@ -60,7 +61,6 @@ time = { -- the time unit in ticks
 }
 
 s = server
-
 
 ---@param game_ticks number the number of ticks since the last onTick call (normally 1, while sleeping 400.)
 function onTick(game_ticks)
@@ -243,8 +243,10 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		end
 		s.announce("[Flak Commands]", "Tasks: "..text)
 		debug.log(text)
-	elseif command == "viewFlak" then
+	elseif command == "viewflak" then
 		s.announce("[Flak Commands]", "Flak Amount: "..#g_savedata.spawnedFlak)
+	elseif command == "loadedvehicles" then
+		s.announce("[Flak Commands]", "Loaded Vehicles: "..table.concat(g_savedata.loadedVehicles, ", "))
 	end
 end
 

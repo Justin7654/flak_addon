@@ -148,7 +148,7 @@ function flakMain.getPseudoTarget(Flak)
     for i, player in pairs(server.getPlayers()) do
         --For each player, check if they are high enough and close enough to flak
         local playerPos, success = server.getPlayerPos(player.id)
-        if success and playerPos[14] > g_savedata.settings.minAlt then
+        if success and playerPos[14] > flakMain.calculateMinAlt(Flak,playerPos) then
             --This player is high enough to be shot by flak
             if success and matrix.distance(flakPos, playerPos) < sightDistance then
                 --This player is close enough to the flak
@@ -286,7 +286,7 @@ function flakMain.fireFlak(sourceMatrix, targetMatrix) --Convert to using flakOb
     local altFactor = 10/(0.5 ^ (alt/300)) --10+(0.2*alt)
     local spread = altFactor
     local spread = spread * weatherMultiplier
-    spread = spread-- / g_savedata.settings.flakAccuracyMult
+    spread = spread / math.max(g_savedata.settings.flakAccuracyMult, 0.1)
 
     if spread == math.huge then
         d.printError("Fire", "Spread is infinite! Defaulting to 10. AltFactor: ",altFactor,", weatherMultiplier: ",weatherMultiplier)
