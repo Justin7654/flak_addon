@@ -96,9 +96,9 @@ function onTick(game_ticks)
 
 				--Calculate lead
 				if g_savedata.debug.lead then
-					local travelTime = flakMain.calculateTravelTime(targetMatrix, sourceMatrix)
-					local secondLead = aiming.predictPosition(flak.targetPositionData, travelTime)
-					if secondLead ~= nil then d.debugLabel("lead", secondLead, "Advanced Lead", travelTime) end
+					--local travelTime = flakMain.calculateTravelTime(targetMatrix, sourceMatrix)
+					--local secondLead = aiming.predictPosition(flak.targetPositionData, travelTime)
+					--if secondLead ~= nil then d.debugLabel("lead", secondLead, "Advanced Lead", travelTime) end
 				end
 				local leadMatrix = flakMain.calculateLead(flak)
 				
@@ -153,9 +153,6 @@ end
 
 function onVehicleUnload(vehicle_id)
 	local index = util.removeFromList(g_savedata.loadedVehicles, vehicle_id)
-	if index == -1 then
-		d.printWarning("Could not remove ",vehicle_id," from loaded vehicles list when it unlaoded. Not found")
-	end
 
 	--Change flak simulating status
 	local isFlak, flakData = flakMain.vehicleIsInSpawnedFlak(vehicle_id)
@@ -186,12 +183,12 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 	args = {...}
 	if command == "debug" then
 		if args[1] == nil then
-			s.announce("[Flak Commands]", "Available debug modes:\nchat\nerror\nlead")
+			s.announce("[Flak Commands]", "Available modes:\nchat\nwarning\nerror\nlead\ntask")
 		else
 			debugType = string.lower(args[1])
 			success = d.toggleDebug(debugType)
 			if not success then
-				s.announce("[Flak Commands]", "Debug mode not found; available modes:\nchat\nerror\nlead")
+				s.announce("[Flak Commands]", "Debug mode not found; available modes:\nchat\nwarning\nerror\nlead\ntask")
 			end
 		end
 	elseif command == "clear" or command == "reset" then
@@ -247,6 +244,84 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		s.announce("[Flak Commands]", "Flak Amount: "..#g_savedata.spawnedFlak)
 	elseif command == "loadedvehicles" then
 		s.announce("[Flak Commands]", "Loaded Vehicles: "..table.concat(g_savedata.loadedVehicles, ", "))
+	elseif command == "setting" then
+		chosenKey = string.lower(args[1])
+		chosenValue = args[2]
+		if chosenKey == "accuracy" then
+			if chosenValue then
+				g_savedata.settings.flakAccuracyMult = tonumber(chosenValue)
+				s.announce("[Flak Commands]", "Flak Accuracy Multiplier set to "..g_savedata.settings.flakAccuracyMult.." by "..s.getPlayerName(user_peer_id))
+			else
+				s.announce("[Flak Commands]", "Current Flak Accuracy Multiplier: "..tostring(g_savedata.settings.flakAccuracyMult))
+			end
+		end
+	elseif command == "test1" then
+		--Test shrapnel
+		local startTime = s.getTimeMillisec()
+		local playerPos = s.getPlayerPos(user_peer_id)
+		for _, vehicle_id in pairs(g_savedata.loadedVehicles) do
+			--Test random points
+			for i=1, 50 do
+				local testPosX, testPosY, testPosZ = math.random(-10, 10), math.random(-10, 10), math.random(-10, 10)
+				worldPos, success = s.getVehiclePos(vehicle_id, testPosX, testPosY, testPosZ)
+				d.printDebug("Testing: ",testPosX, ", ",testPosY, ", ",testPosZ)
+				if success and worldPos then
+					d.printDebug("Success")
+					if matrix.distance(playerPos, worldPos) < 4 then
+						local success = s.addDamage(vehicle_id, 5, testPosX, testPosY, testPosZ, 0.25)
+						d.printDebug("Added damage success: ",tostring(success))
+					end
+				else
+					d.printDebug("Failed")
+				end
+			end
+		end
+		local endTime = s.getTimeMillisec()
+		d.printDebug("Time taken: ",endTime-startTime,"ms")
+	elseif command == "test2" then
+		--Test shrapnel
+		local startTime = s.getTimeMillisec()
+		local playerPos = s.getPlayerPos(user_peer_id)
+		local targetPosX, targetPosY, targetPosZ = matrix.position(playerPos)
+		for _, vehicle_id in pairs(g_savedata.loadedVehicles) do
+			--Set dials
+			local components,success = s.getVehicleComponents(vehicle_id)
+			if success then
+				local sign1 = components.components.signs[1]
+				if sign1 then 
+					local x,y,z = sign1.pos.x, sign1.pos.y, sign1.pos.z
+					s.setVehicleKeypad(vehicle_id, "x", x)
+					s.setVehicleKeypad(vehicle_id, "y", y)
+					s.setVehicleKeypad(vehicle_id, "z", z)
+				end
+			end
+			--Real
+			local vehicleData, success = s.getVehicleData(vehicle_id)
+			
+			
+			if success and vehicleData.editable == true then
+				local vehicleTransform = s.getVehiclePos(vehicle_id, 0, 0, 0)
+
+				local vehicleX, vehicleY, vehicleZ = matrix.position(vehicleTransform)				
+				
+				local combinedX, combinedY, combinedZ = matrix.position(matrix.multiply(matrix.invert(vehicleTransform), matrix.translation(targetPosX, targetPosY, targetPosZ)))
+				d.printDebug("Raw Combined: ",combinedX, ", ",combinedY, ", ",combinedZ)
+				combinedX, combinedY, combinedZ = math.floor(combinedX*4), math.floor(combinedY*4), math.floor(combinedZ*4)
+
+				-- Add Damage below the target, to account for the test target being the player, which is not inside the blocks
+				for i=-5, 2 do
+					local success = s.addDamage(vehicle_id, 2, combinedX, combinedY+i, combinedZ, 0.25)
+				end
+				--Debug
+				d.printDebug("Combined: ",combinedX, ", ",combinedY, ", ",combinedZ)
+				d.debugLabel("chat", matrix.translation(vehicleX+combinedX/4, vehicleY+combinedY/4, vehicleZ+combinedZ/4), "Damage", 3*time.second)
+				--d.debugLabel("chat", playerPos, tostring(targetPosX).."\n"..tostring(targetPosY).."\n"..tostring(targetPosZ), 3*time.second)
+				local realPosition, success = s.getVehiclePos(vehicle_id, combinedX, 0, combinedZ)
+				if success then d.debugLabel("chat", realPosition, "Real", 3*time.second) end
+			end
+		end
+		local endTime = s.getTimeMillisec()
+		d.printDebug("Time taken: ",endTime-startTime,"ms")
 	end
 end
 
