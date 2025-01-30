@@ -7,9 +7,9 @@ debugging = {}
 
 function debugging.tickDebugs()
     if g_savedata.debug.task then
-        local taskDebugText = "Tasks: \n"
+        local taskDebugText = "Total Tasks: "..tostring(util.getTableLength(g_savedata.tasks)).."\nTask List: \n"
         for id, task in pairs(g_savedata.tasks) do
-            taskDebugText = taskDebugText.."Task "..task.id..":\n"..g_savedata.tickCounter.."/"..task.endTime.."\nRemaining: "..tostring(g_savedata.tickCounter-task.endTime).."\nType: "..type(task.callback).."\n"
+            taskDebugText = taskDebugText.."Task "..task.callback.." ("..task.id..")\nRemaining: "..tostring(g_savedata.tickCounter-task.endTime).."\n"
         end
         server.setPopupScreen(-1, g_savedata.taskDebugUI, "", true, taskDebugText, 0.6, 0)
     elseif g_savedata.taskDebugUI then

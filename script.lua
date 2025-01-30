@@ -11,11 +11,13 @@ d = require("libs.debugging")
 flakMain = require("libs.flakMain")
 taskService = require("libs.taskService")
 aiming = require("libs.ai.aiming")
+shrapnel = require("libs.shrapnel")
 
 -- Data
 g_savedata = {
 	tickCounter = 0,
 	settings = {
+		simulateShrapnel = property.checkbox("Shrapnel Simulation (may impact performance)", true),
 		ignoreWeather = property.checkbox("Weather does not affect flak accuracy",  false),
 		flakShellSpeed = property.slider("Flak Shell Speed (m/s)", 100, 1000, 100, 500),
 		fireRate = property.slider("Flak Fire Rate (seconds between shots)", 1, 20, 1, 4),
@@ -33,12 +35,15 @@ g_savedata = {
 	spawnedFlak = {}, ---@type FlakData[]
 	loadedVehicles = {}, ---@type number[]
 	vehicleOwners = {},
+	vehicleToMainVehicle = {}, ---@type table<number, number> Use to get the main_vehicle_id of a group from a vehicle id
+	vehicleInitialOffsets = {}, ---@type table<number, SWMatrix> The initial offset this vehicle had from the main vehicle when it spawned
 	debug = {
 		chat = false,
 		warning = true,
 		error = true,
 		lead = false,
 		task = false,
+		shrapnel = false,
 	},
 	tasks = {}, --List of all tasks
 	taskCurrentID = 0, --The current ID for tasks
@@ -47,10 +52,11 @@ g_savedata = {
 	debugAI = {} --Used by debugging AI vehicles. Character IDs
 }
 
---- @alias callbackID "freeDebugLabel" | "flakExplosion"
+--- @alias callbackID "freeDebugLabel" | "flakExplosion" | "tickShrapnelChunk"
 registeredTaskCallbacks = {
 	freeDebugLabel = d.freeDebugLabel,
-	flakExplosion = flakMain.flakExplosion
+	flakExplosion = flakMain.flakExplosion,
+	tickShrapnelChunk = shrapnel.tickShrapnelChunk
 }
 
 time = { -- the time unit in ticks
@@ -61,6 +67,15 @@ time = { -- the time unit in ticks
 }
 
 s = server
+
+cachedPositions = {}
+--- Same as server.getVehiclePos but it caches the result for the current tick. Use when this operation might be repeated
+function server.getVehiclePosCached(vehicle_id)
+	if cachedPositions[vehicle_id] == nil then
+		cachedPositions[vehicle_id] = s.getVehiclePos(vehicle_id)
+	end
+	return cachedPositions[vehicle_id]
+end
 
 ---@param game_ticks number the number of ticks since the last onTick call (normally 1, while sleeping 400.)
 function onTick(game_ticks)
@@ -120,9 +135,10 @@ function onTick(game_ticks)
 			end
 		end
 	end
-
+	
 	taskService:handleTasks()
 	d.tickDebugs()
+	cachedPositions = {}
 end
 
 function onVehicleLoad(vehicle_id)
@@ -135,6 +151,20 @@ function onVehicleLoad(vehicle_id)
 		flakData.simulating = true
 		d.printDebug("Set flak ",flakData.vehicle_id," to simulating")
 	end
+
+	if g_savedata.vehicleInitialOffsets[vehicle_id] == nil then
+		--Calculate offset from main vehicle so it can be put into 
+		local vehicleMatrix = s.getVehiclePos(vehicle_id)
+		local mainVehicleMatrix = s.getVehiclePos(g_savedata.vehicleToMainVehicle[vehicle_id])
+			
+		local offset = matrix.multiply(matrix.invert(mainVehicleMatrix), vehicleMatrix)
+
+		--d.debugLabel("chat", mainVehicleMatrix, "Main", 8*time.second)
+		--d.debugLabel("chat", vehicleMatrix, "Vehicle", 5*time.second)
+		--d.printDebug("Calculated offset for vehicle ",vehicle_id," to be ",math.floor(x),",",math.floor(y),",",math.floor(z))
+		g_savedata.vehicleInitialOffsets[vehicle_id] = offset
+	end
+	
 	d.printDebug("End callback")
 end
 
@@ -145,9 +175,16 @@ function onGroupSpawn(group_id, peer_id, x, y, z, group_cost)
 	if flakMain.isVehicleFlak(main_vehicle_id) then
 		flakMain.addVehicleToSpawnedFlak(main_vehicle_id)		
 	end
-	--Set vehicle owners
+	local mainVehicleMatrix, success = s.getVehiclePos(main_vehicle_id)
+	local p1,p2,p3 = matrix.position(mainVehicleMatrix)
+	d.printDebug("Main vehicle matrix: ",p1,",",p2,",",p3)
+
 	for _, vehicle_id in pairs(vehicle_group) do
+		--Set vehicle owners
 		g_savedata.vehicleOwners[vehicle_id] = peer_id
+		--Set vehicleToMainVehicle
+		g_savedata.vehicleToMainVehicle[vehicle_id] = main_vehicle_id
+		--Set vehicleInitialOffsets
 	end
 end
 
@@ -173,6 +210,8 @@ function onVehicleDespawn(vehicle_id)
 
 	--Remove from player vehicles
 	g_savedata.vehicleOwners[vehicle_id] = nil
+	--Remove from vehicleToMainVehicle
+	g_savedata.vehicleToMainVehicle[vehicle_id] = nil
 end
 
 function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, command, ...)
@@ -256,72 +295,16 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 			end
 		end
 	elseif command == "test1" then
-		--Test shrapnel
-		local startTime = s.getTimeMillisec()
 		local playerPos = s.getPlayerPos(user_peer_id)
-		for _, vehicle_id in pairs(g_savedata.loadedVehicles) do
-			--Test random points
-			for i=1, 50 do
-				local testPosX, testPosY, testPosZ = math.random(-10, 10), math.random(-10, 10), math.random(-10, 10)
-				worldPos, success = s.getVehiclePos(vehicle_id, testPosX, testPosY, testPosZ)
-				d.printDebug("Testing: ",testPosX, ", ",testPosY, ", ",testPosZ)
-				if success and worldPos then
-					d.printDebug("Success")
-					if matrix.distance(playerPos, worldPos) < 4 then
-						local success = s.addDamage(vehicle_id, 5, testPosX, testPosY, testPosZ, 0.25)
-						d.printDebug("Added damage success: ",tostring(success))
-					end
-				else
-					d.printDebug("Failed")
-				end
-			end
-		end
-		local endTime = s.getTimeMillisec()
-		d.printDebug("Time taken: ",endTime-startTime,"ms")
-	elseif command == "test2" then
-		--Test shrapnel
-		local startTime = s.getTimeMillisec()
-		local playerPos = s.getPlayerPos(user_peer_id)
-		local targetPosX, targetPosY, targetPosZ = matrix.position(playerPos)
-		for _, vehicle_id in pairs(g_savedata.loadedVehicles) do
-			--Set dials
-			local components,success = s.getVehicleComponents(vehicle_id)
-			if success then
-				local sign1 = components.components.signs[1]
-				if sign1 then 
-					local x,y,z = sign1.pos.x, sign1.pos.y, sign1.pos.z
-					s.setVehicleKeypad(vehicle_id, "x", x)
-					s.setVehicleKeypad(vehicle_id, "y", y)
-					s.setVehicleKeypad(vehicle_id, "z", z)
-				end
-			end
-			--Real
-			local vehicleData, success = s.getVehicleData(vehicle_id)
-			
-			
-			if success and vehicleData.editable == true then
-				local vehicleTransform = s.getVehiclePos(vehicle_id, 0, 0, 0)
-
-				local vehicleX, vehicleY, vehicleZ = matrix.position(vehicleTransform)				
-				
-				local combinedX, combinedY, combinedZ = matrix.position(matrix.multiply(matrix.invert(vehicleTransform), matrix.translation(targetPosX, targetPosY, targetPosZ)))
-				d.printDebug("Raw Combined: ",combinedX, ", ",combinedY, ", ",combinedZ)
-				combinedX, combinedY, combinedZ = math.floor(combinedX*4), math.floor(combinedY*4), math.floor(combinedZ*4)
-
-				-- Add Damage below the target, to account for the test target being the player, which is not inside the blocks
-				for i=-5, 2 do
-					local success = s.addDamage(vehicle_id, 2, combinedX, combinedY+i, combinedZ, 0.25)
-				end
-				--Debug
-				d.printDebug("Combined: ",combinedX, ", ",combinedY, ", ",combinedZ)
-				d.debugLabel("chat", matrix.translation(vehicleX+combinedX/4, vehicleY+combinedY/4, vehicleZ+combinedZ/4), "Damage", 3*time.second)
-				--d.debugLabel("chat", playerPos, tostring(targetPosX).."\n"..tostring(targetPosY).."\n"..tostring(targetPosZ), 3*time.second)
-				local realPosition, success = s.getVehiclePos(vehicle_id, combinedX, 0, combinedZ)
-				if success then d.debugLabel("chat", realPosition, "Real", 3*time.second) end
-			end
-		end
-		local endTime = s.getTimeMillisec()
-		d.printDebug("Time taken: ",endTime-startTime,"ms")
+		playerPos[14] = playerPos[14] + 5 --Move it up 5m
+		shrapnel.spawnShrapnel(playerPos, 0, -10, 0)
+	elseif command == "testkeypads" and args[1] then
+		local vehicle_id = tonumber(args[1])
+		local components = s.getVehicleComponents(vehicle_id)
+		local position = components.components.signs[1].pos
+		s.setVehicleKeypad(vehicle_id, "x", position.x)
+		s.setVehicleKeypad(vehicle_id, "y", position.y)
+		s.setVehicleKeypad(vehicle_id, "z", position.z)
 	end
 end
 
