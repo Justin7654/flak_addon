@@ -2,6 +2,7 @@ flakMain = {}
 
 d = require("libs.debugging")
 taskService = require("libs.taskService")
+shrapnel = require("libs.shrapnel")
 
 --- @param vehicle_id number
 --- @return boolean isFlak True if the vehicle has a IS_AI_FLAK sign on it
@@ -318,6 +319,7 @@ function flakMain.flakExplosion(explosionData)
     position = explosionData.position
     d.printDebug("Explosion is at ",s.getTile(position).name," as magnitude ",magnitude)
     s.spawnExplosion(position, magnitude)
+    shrapnel.explosion(position,100)
 end
 
 return flakMain

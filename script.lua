@@ -23,6 +23,7 @@ g_savedata = {
 		fireRate = property.slider("Flak Fire Rate (seconds between shots)", 1, 20, 1, 4),
 		minAlt = property.slider("Minimum Fire Altitude Base", 100, 700, 50, 200),
 		flakAccuracyMult = property.slider("Flak Accuracy Multiplier", 0.5, 1.5, 0.1, 1),
+		shrapnelSubSteps = 2,
 	},
 	fun = {
 		noPlayerIsSafe = {
@@ -67,14 +68,16 @@ time = { -- the time unit in ticks
 }
 
 s = server
+m = matrix
 
 cachedPositions = {}
---- Same as server.getVehiclePos but it caches the result for the current tick. Use when this operation might be repeated
-function server.getVehiclePosCached(vehicle_id)
+--- Same as server.getVehiclePos but it caches the result for the current tick. Use when this operation might be repeated.
+--- Offers a significant speed boost to the shrapnel system
+function getVehiclePosCached(vehicle_id)
 	if cachedPositions[vehicle_id] == nil then
-		cachedPositions[vehicle_id] = s.getVehiclePos(vehicle_id)
+		cachedPositions[vehicle_id] = table.pack(s.getVehiclePos(vehicle_id,0,0,0))
 	end
-	return cachedPositions[vehicle_id]
+	return table.unpack(cachedPositions[vehicle_id])
 end
 
 ---@param game_ticks number the number of ticks since the last onTick call (normally 1, while sleeping 400.)
@@ -294,17 +297,24 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 				s.announce("[Flak Commands]", "Current Flak Accuracy Multiplier: "..tostring(g_savedata.settings.flakAccuracyMult))
 			end
 		end
-	elseif command == "test1" then
+	elseif command == "test" then
 		local playerPos = s.getPlayerPos(user_peer_id)
 		playerPos[14] = playerPos[14] + 5 --Move it up 5m
 		shrapnel.spawnShrapnel(playerPos, 0, -10, 0)
+	elseif command == "test2" then
+		local playerPos = s.getPlayerPos(user_peer_id)
+		playerPos[14] = playerPos[14] + 5 --Move it up 5m
+		shrapnel.explosion(playerPos, 20)
 	elseif command == "testkeypads" and args[1] then
 		local vehicle_id = tonumber(args[1])
-		local components = s.getVehicleComponents(vehicle_id)
-		local position = components.components.signs[1].pos
-		s.setVehicleKeypad(vehicle_id, "x", position.x)
-		s.setVehicleKeypad(vehicle_id, "y", position.y)
-		s.setVehicleKeypad(vehicle_id, "z", position.z)
+		if type(vehicle_id) == "number" then
+			local components = s.getVehicleComponents(vehicle_id)
+			local position = components.components.signs[1].pos
+
+			s.setVehicleKeypad(vehicle_id, "x", position.x)
+			s.setVehicleKeypad(vehicle_id, "y", position.y)
+			s.setVehicleKeypad(vehicle_id, "z", position.z)
+		end
 	end
 end
 

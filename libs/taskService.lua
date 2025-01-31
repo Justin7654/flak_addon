@@ -42,25 +42,21 @@ end
 --- Call this every tick for tasks to work correctly. This can be throttled to not be every tick but that will
 --- result in tasks lag and not being ran at the correct time.
 function TaskService:handleTasks()
-    local tickCounter = g_savedata.tickCounter
-    for id, task in pairs(TaskService:GetTasks()) do
-        if tickCounter >= math.floor(task.endTime) then
-            --Convert callbackID to a function
-            local callbackID = task.callback
-            local callbackFunc = nil
-            if type(callbackID) == "string" then
-                callbackFunc = TaskService:GetCallbackFromID(callbackID)
-            else
-                d.printError("TaskService:handleTasks", "Invalid callback type for task ", type(callbackID))
-                goto continue_handleTasks
+    local floor = math.floor
+    local tickCounter = floor(g_savedata.tickCounter)
+    local tasksList = util.shallowCopy(TaskService:GetTasks()) --Not making a shadow copy causes really werid behavior when creating a task inside the task callback
+    for id, task in pairs(tasksList) do
+        if tickCounter >= task.endTime then
+            if tickCounter ~= task.endTime then
+                d.printWarning("Task ",id," is executing slower than expected. Expected tick ",task.endTime," but ran at tick ",tickCounter)
             end
-            --Run the function
-            if callbackFunc ~= nil and type(callbackFunc) == "function" then
+            --Call the callback
+            local callbackFunc = TaskService:GetCallbackFromID(task.callback)
+            if type(callbackFunc) == "function" then
                 callbackFunc(table.unpack(task.arguments))
             end
             --Delete the task
             g_savedata.tasks[id] = nil
-            ::continue_handleTasks::
         end
     end
 end

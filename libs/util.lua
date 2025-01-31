@@ -126,4 +126,14 @@ function util.hasTag(tags, tag)
 	return false
 end
 
+--- @param original table the table to copy
+--- @return table the copied table
+function util.shallowCopy(original)
+    local copy = {}
+    for key, value in pairs(original) do
+        copy[key] = value
+    end
+    return copy
+end
+
 return util
