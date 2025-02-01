@@ -167,7 +167,7 @@ end
 --- @param location SWMatrix the location to calculate the sight radius
 function flakMain.calculateFlakSight(location)
     --Calculation from ICM tickVision, assuming flak has radar.
-    BASE_RADIUS = 3000
+    BASE_RADIUS = 3500
     local weather = s.getWeather(location)
     local clock = s.getTime()
     return BASE_RADIUS * (1 - (weather.fog * 0.2)) * (0.8 + (math.min(clock.daylight_factor*1.8, 1) * 0.2)) * (1 - (weather.rain * 0.2))
@@ -182,7 +182,7 @@ function flakMain.calculateMinAlt(flak, searchPosition)
     end
     local flakPosition = flak.position
     local XZDistance =  util.calculateEuclideanDistance(flakPosition[13], searchPosition[13], flakPosition[15], searchPosition[15])
-    return g_savedata.settings.minAlt + (XZDistance/30)
+    return g_savedata.settings.minAlt + (XZDistance/20)
 end
 
 --- Calculate the time it will take for the flak to reach the target
@@ -284,7 +284,7 @@ function flakMain.fireFlak(sourceMatrix, targetMatrix) --Convert to using flakOb
 
     --Calculate accuracy
     local spread = 0
-    local altFactor = 10/(0.5 ^ (alt/300)) --10+(0.2*alt)
+    local altFactor = 15/(0.5 ^ (alt/320)) --10+(0.2*alt)
     local spread = altFactor
     local spread = spread * weatherMultiplier
     spread = spread / math.max(g_savedata.settings.flakAccuracyMult, 0.1)
