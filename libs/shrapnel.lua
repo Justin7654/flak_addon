@@ -20,9 +20,10 @@ function shrapnel.tickShrapnelChunk(chunk)
     -- Attempt to damage near vehicles (TODO: Maybe spatial hashing can make this faster)
     local hit = false
     local checks = 0
-    local closest = 100000
+    local closest = 100000 --TODO: Make the shrapnel delete itself if its super far away from anything (the plane flew past)
     for i,vehicle_id in ipairs(g_savedata.loadedVehicles) do
         local owner = g_savedata.vehicleOwners[vehicle_id]
+        --Check if the vehicle is owned by a player so we dont waste time checking AI vehicles or static vehicles
         if owner and owner >= 0 then
             local vehicleMatrix, success = getVehiclePosCached(vehicle_id)
             local posX, posY, posZ = matrix.position(vehicleMatrix)
@@ -31,7 +32,7 @@ function shrapnel.tickShrapnelChunk(chunk)
                 --Attempt to damage
                 checks = checks + 1
                 local hitPosition = m.translation(chunkPosX, chunkPosY, chunkPosZ)
-                hit = shrapnel.damageVehicleAtWorldPosition(vehicle_id, hitPosition, 15, 0.5)
+                hit = shrapnel.damageVehicleAtWorldPosition(vehicle_id, hitPosition, 15, 0.4)
                 if hit then
                     d.printDebug("Shrapnel hit on vehicle ",vehicle_id," spawned by ",g_savedata.vehicleOwners[vehicle_id] or "nil","!")
                     break
@@ -46,7 +47,7 @@ function shrapnel.tickShrapnelChunk(chunk)
             chunk.ui_id = s.getMapID()
         end
         local x, y, z = chunk.positionX, chunk.positionY, chunk.positionZ
-        local text = "Shrapnel "..chunk.life.."\nChecks: "..checks
+        local text = "Shrapnel\nChecks: "..checks
         server.setPopup(-1, chunk.ui_id, "", true, text, chunkPosX,chunkPosY,chunkPosZ, 600)
         if hit then
             d.debugLabel("shrapnel", m.translation(x, y, z), "Hit", 5*time.second)

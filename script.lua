@@ -12,6 +12,7 @@ flakMain = require("libs.flakMain")
 taskService = require("libs.taskService")
 aiming = require("libs.ai.aiming")
 shrapnel = require("libs.shrapnel")
+bboxManager = require("libs.bboxManager")
 
 -- Data
 g_savedata = {
@@ -23,7 +24,7 @@ g_savedata = {
 		fireRate = property.slider("Flak Fire Rate (seconds between shots)", 1, 20, 1, 4),
 		minAlt = property.slider("Minimum Fire Altitude Base", 100, 700, 50, 200),
 		flakAccuracyMult = property.slider("Flak Accuracy Multiplier", 0.5, 1.5, 0.1, 1),
-		shrapnelSubSteps = 2,
+		shrapnelSubSteps = property.slider("Flak simulation substeps (ADVANCED - SIGNIFICANT PERFORAMNCE IMPACT)", 1, 3, 2, 2)
 	},
 	fun = {
 		noPlayerIsSafe = {
@@ -38,6 +39,7 @@ g_savedata = {
 	vehicleOwners = {},
 	vehicleToMainVehicle = {}, ---@type table<number, number> Use to get the main_vehicle_id of a group from a vehicle id
 	vehicleInitialOffsets = {}, ---@type table<number, SWMatrix> The initial offset this vehicle had from the main vehicle when it spawned
+	vehicleBBOXs = {}, ---@type table<number, BBOX> The bounding box of the vehicle
 	debug = {
 		chat = false,
 		warning = true,
@@ -45,6 +47,7 @@ g_savedata = {
 		lead = false,
 		task = false,
 		shrapnel = false,
+		bbox = false,
 	},
 	tasks = {}, --List of all tasks
 	taskCurrentID = 0, --The current ID for tasks
@@ -166,6 +169,9 @@ function onVehicleLoad(vehicle_id)
 		--d.debugLabel("chat", vehicleMatrix, "Vehicle", 5*time.second)
 		--d.printDebug("Calculated offset for vehicle ",vehicle_id," to be ",math.floor(x),",",math.floor(y),",",math.floor(z))
 		g_savedata.vehicleInitialOffsets[vehicle_id] = offset
+	end
+	if g_savedata.vehicleBBOXs[vehicle_id] == nil then
+		bboxManager.generateBBOX(vehicle_id)
 	end
 	
 	d.printDebug("End callback")
@@ -304,7 +310,7 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 	elseif command == "test2" then
 		local playerPos = s.getPlayerPos(user_peer_id)
 		playerPos[14] = playerPos[14] + 5 --Move it up 5m
-		shrapnel.explosion(playerPos, 20)
+		shrapnel.explosion(playerPos, 300)
 	elseif command == "testkeypads" and args[1] then
 		local vehicle_id = tonumber(args[1])
 		if type(vehicle_id) == "number" then
