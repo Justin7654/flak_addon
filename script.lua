@@ -303,14 +303,24 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 				s.announce("[Flak Commands]", "Current Flak Accuracy Multiplier: "..tostring(g_savedata.settings.flakAccuracyMult))
 			end
 		end
-	elseif command == "test" then
+	elseif command == "shrapneltest" then
 		local playerPos = s.getPlayerPos(user_peer_id)
 		playerPos[14] = playerPos[14] + 5 --Move it up 5m
 		shrapnel.spawnShrapnel(playerPos, 0, -10, 0)
-	elseif command == "test2" then
+	elseif command == "spawnshrapnel" or command == "spawnshrap" then
+		local num
+		if args[1] ~= nil then 
+			num = tonumber(args[1])
+			if num == nil then
+				num = 200
+			end
+		else
+			num = 200
+		end
 		local playerPos = s.getPlayerPos(user_peer_id)
 		playerPos[14] = playerPos[14] + 5 --Move it up 5m
-		shrapnel.explosion(playerPos, 300)
+		s.announce("[Flak Commands]", "Spawned "..num.." shrapnel at your position")
+		shrapnel.explosion(playerPos, num)
 	elseif command == "testkeypads" and args[1] then
 		local vehicle_id = tonumber(args[1])
 		if type(vehicle_id) == "number" then
