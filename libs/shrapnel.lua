@@ -23,8 +23,9 @@ function shrapnel.tickShrapnelChunk(chunk)
     local closest = 100000 --TODO: Make the shrapnel delete itself if its super far away from anything (the plane flew past)
     for i,vehicle_id in ipairs(g_savedata.loadedVehicles) do
         local owner = g_savedata.vehicleOwners[vehicle_id]
+
         --Check if the vehicle is owned by a player so we dont waste time checking AI vehicles or static vehicles
-        if owner and owner >= 0 then
+        if true or owner and owner >= 0 then
             local vehicleMatrix, success = getVehiclePosCached(vehicle_id)
             local posX, posY, posZ = matrix.position(vehicleMatrix)
             --Check if its less than 50m away
@@ -39,6 +40,7 @@ function shrapnel.tickShrapnelChunk(chunk)
                 end 
             end
         end
+        ::tickShrapnel_continue::
     end
     
     --Shrapnel debug
@@ -50,7 +52,7 @@ function shrapnel.tickShrapnelChunk(chunk)
         local text = "Shrapnel\nChecks: "..checks
         server.setPopup(-1, chunk.ui_id, "", true, text, chunkPosX,chunkPosY,chunkPosZ, 600)
         if hit then
-            d.debugLabel("shrapnel", m.translation(x, y, z), "Hit", 5*time.second)
+            --d.debugLabel("shrapnel", m.translation(x, y, z), "Hit", 5*time.second)
         end
     end
     
@@ -123,36 +125,40 @@ end
 --- @param amount number The amount of damage to apply (0-100)
 --- @param radius number the radius to apply the damage over, in meters
 function shrapnel.damageVehicleAtWorldPosition(vehicle_id, position, amount, radius)
-    --Get the vehicle position, and adjust as necessary
-    local vehiclePos
+    --Check if 0,0,0 exists. otherwise we need to find another
+    local voxelX, voxelY, voxelZ = 0,0,0
+    if shrapnel.checkVoxelExists(vehicle_id, voxelX, voxelY, voxelZ) == false then
+        --Get the closest voxel
+    end
+    --Get the vehicle position
+    vehiclePos,success = getVehiclePosCached(vehicle_id)--s.getVehiclePos(vehicle_id,0,0,0)
+    if not success then
+        d.printError("Shrapnel", SSSWTOOL_SRC_LINE,": Failed to get vehicle position for vehicle ",vehicle_id)
+        return false
+    end
+    --Check if it needs to be offset (for sub bodys)
     if g_savedata.vehicleToMainVehicle[vehicle_id] == vehicle_id then
         --This is the main vehicle, can use direct current position
-        vehiclePos,success = s.getVehiclePos(vehicle_id,0,0,0)
-        if not success then
-            d.printError("Shrapnel", SSSWTOOL_OUT_LINE,": Failed to get vehicle position for vehicle ",vehicle_id)
-            return false
-        end
+        d.debugLabel("shrapnel", vehiclePos, "0,0,0", 3*time.second)
     else
-        local rawVehiclePos, success = getVehiclePosCached(vehicle_id)
-        if not success then
-            d.printError("Shrapnel", SSSWTOOL_OUT_LINE,": Failed to get vehicle position for vehicle ",vehicle_id)
-            return false
-        end
         ---[[
         --- This offset will make sure that the voxel calculations are generated from the pov from the main_vehicle_id, since this can move.
         --- For example, a truck 10 blocks tall. It falls into place after spawn. Instead of calculating 10, calculate the actual voxel
         --- positions for the truck which is how high up from the main vehicle it is.
         ---]]
         local offset = g_savedata.vehicleInitialOffsets[vehicle_id]
-        vehiclePos = matrix.multiply(rawVehiclePos, matrix.invert(offset))
+        vehiclePos = matrix.multiply(vehiclePos, matrix.invert(offset))
     end
     --Calculate the voxel positions
-    local combinedX, combinedY, combinedZ = matrix.position(matrix.multiply(matrix.invert(vehiclePos), position))
+    local finalMatrix = matrix.multiply(matrix.invert(vehiclePos), position)
+    local combinedX, combinedY, combinedZ = matrix.position(finalMatrix)
     combinedX, combinedY, combinedZ = math.floor(combinedX*4), math.floor(combinedY*4), math.floor(combinedZ*4) --Each voxel is 0.25m and then round
 
 	local success = s.addDamage(vehicle_id, amount, combinedX, combinedY, combinedZ, radius)
 
     --Debug
+    --d.setVoxelMap(vehicle_id, matrix.multiply(vehiclePos, matrix.translation(0,0.2,0)), "shrapnel")
+    d.debugLabel("shrapnel", position, combinedX..","..combinedY..","..combinedZ, 8*time.second)
     if success then
         d.printDebug("Hit at ", tostring(combinedX),",", tostring(combinedY),",", tostring(combinedZ), " with radius ", tostring(radius))
         local realPosition, success = s.getVehiclePos(vehicle_id, combinedX, combinedY, combinedZ)
@@ -162,6 +168,38 @@ function shrapnel.damageVehicleAtWorldPosition(vehicle_id, position, amount, rad
     end
 
     return success
+end
+
+--- @param vehicle_id number The id of the vehicle to check
+--- @param x number The x voxel position to check
+--- @param y number The y voxel position to check
+--- @param z number The z voxel position to check
+--- @return boolean exists weather the voxel exists or not
+function shrapnel.checkVoxelExists(vehicle_id, x, y, z)
+    --Checking for damage success is way faster than comparing the centerPos
+    return s.addDamage(vehicle_id, 0, x, y, z, 0)
+end
+
+function shrapnel.debugVoxelPositions(vehicle_id, resume_range)
+    local _, success = s.getVehiclePos(vehicle_id)
+    if not success then
+        return d.printWarning("Stopping debugVoxelPositions due to failed getVehiclePos")
+    end
+    local range = 45
+    local z = resume_range or -range
+    d.printDebug("Debugging voxel positions at z=",tostring(z))
+    for x=-range, range, 1 do
+        for y=-range, range, 1 do
+            if shrapnel.checkVoxelExists(vehicle_id,x,y,z) then
+                local realPosition, success = s.getVehiclePos(vehicle_id, x, y, z)
+                d.debugLabel("shrapnel", realPosition, x..","..y..","..z, 10*time.second, 3)
+            end
+        end
+    end
+
+    if z < range then
+        taskService:AddTask("debugVoxelPositions", 45, {vehicle_id, z+1})
+    end
 end
 
 return shrapnel

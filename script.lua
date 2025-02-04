@@ -40,6 +40,8 @@ g_savedata = {
 	vehicleToMainVehicle = {}, ---@type table<number, number> Use to get the main_vehicle_id of a group from a vehicle id
 	vehicleInitialOffsets = {}, ---@type table<number, SWMatrix> The initial offset this vehicle had from the main vehicle when it spawned
 	vehicleBBOXs = {}, ---@type table<number, BBOX> The bounding box of the vehicle
+	vehicleComponents = {}, ---@type table<number, SWVehicleComponents> The components of the vehicle
+	vehicleBaseVoxel = {}, ---@type table<number, SWVoxelPos> The base voxel of the vehicle, normally 0,0,0. but if 0,0,0 doesn't exist then the closest component
 	debug = {
 		chat = false,
 		warning = true,
@@ -53,14 +55,16 @@ g_savedata = {
 	taskCurrentID = 0, --The current ID for tasks
 	taskDebugUI = server.getMapID(), --The UI_ID for the task debug UI screen
 	debugLabelUI = {}, --UI_IDs for debug labels that are not in use
-	debugAI = {} --Used by debugging AI vehicles. Character IDs
+	debugAI = {}, --Used by debugging AI vehicles. Character IDs
+	debugVoxelMaps = {} --Used by debugging voxel positions. Vehicle IDS
 }
 
---- @alias callbackID "freeDebugLabel" | "flakExplosion" | "tickShrapnelChunk"
+--- @alias callbackID "freeDebugLabel" | "flakExplosion" | "tickShrapnelChunk" | "debugVoxelPositions"
 registeredTaskCallbacks = {
 	freeDebugLabel = d.freeDebugLabel,
 	flakExplosion = flakMain.flakExplosion,
-	tickShrapnelChunk = shrapnel.tickShrapnelChunk
+	tickShrapnelChunk = shrapnel.tickShrapnelChunk,
+	debugVoxelPositions = shrapnel.debugVoxelPositions
 }
 
 time = { -- the time unit in ticks
@@ -170,7 +174,18 @@ function onVehicleLoad(vehicle_id)
 		--d.printDebug("Calculated offset for vehicle ",vehicle_id," to be ",math.floor(x),",",math.floor(y),",",math.floor(z))
 		g_savedata.vehicleInitialOffsets[vehicle_id] = offset
 	end
-	if g_savedata.vehicleBBOXs[vehicle_id] == nil then
+	if g_savedata.vehicleComponents[vehicle_id] == nil then
+		g_savedata.vehicleComponents[vehicle_id] = s.getVehicleComponents(vehicle_id).components
+	end
+	if g_savedata.vehicleBaseVoxel[vehicle_id] == nil then
+		if shrapnel.checkVoxelExists(vehicle_id, 0, 0, 0) then
+			--Safe to use 0,0,0
+			g_savedata.vehicleBaseVoxel[vehicle_id] = {x=0, y=0, z=0}
+		else
+			--In case that 0,0,0 is not a valid voxel, find the closest component and use that instead
+		end
+	end
+	if g_savedata.vehicleBBOXs and g_savedata.vehicleBBOXs[vehicle_id] == nil then
 		bboxManager.generateBBOX(vehicle_id)
 	end
 	
@@ -303,7 +318,7 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 				s.announce("[Flak Commands]", "Current Flak Accuracy Multiplier: "..tostring(g_savedata.settings.flakAccuracyMult))
 			end
 		end
-	elseif command == "shrapneltest" then
+	elseif command == "testshrapnel" then
 		local playerPos = s.getPlayerPos(user_peer_id)
 		playerPos[14] = playerPos[14] + 5 --Move it up 5m
 		shrapnel.spawnShrapnel(playerPos, 0, -10, 0)
@@ -324,13 +339,50 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 	elseif command == "testkeypads" and args[1] then
 		local vehicle_id = tonumber(args[1])
 		if type(vehicle_id) == "number" then
+			s.announce("[Flak Commands]", "Setting keypads for vehicle "..args[1])
 			local components = s.getVehicleComponents(vehicle_id)
-			local position = components.components.signs[1].pos
-
-			s.setVehicleKeypad(vehicle_id, "x", position.x)
-			s.setVehicleKeypad(vehicle_id, "y", position.y)
-			s.setVehicleKeypad(vehicle_id, "z", position.z)
+			for i, sign in ipairs(components.components.signs) do
+				local name = sign.name
+				local position = sign.pos
+				s.setVehicleKeypad(vehicle_id, name.."_x", position.x)
+				s.setVehicleKeypad(vehicle_id, name.."_y", position.y)
+				s.setVehicleKeypad(vehicle_id, name.."_z", position.z)
+			end
+		else
+			s.announce("[Flak Commands]", "Malformed vehicle ID")
 		end
+	elseif command == "cleanmaps" then
+		local num = 0
+		for id, map in pairs(g_savedata.debugVoxelMaps) do
+			d.cleanVoxelMap(id)
+			num = num + 1
+		end
+		s.announce("[Flak Commands]", "Cleaned "..num.." voxel maps")
+	elseif command == "debugvoxels" then
+		shrapnel.debugVoxelPositions(tostring(args[1]))
+	elseif command == "bench" then
+		local vehicle_id = tonumber(args[1])
+		local runTimes = 50000
+		local start1 = s.getTimeMillisec()
+		for i=1, runTimes do
+			shrapnel.checkVoxelExists(vehicle_id, 0, 0, 0)
+		end
+		local end1 = s.getTimeMillisec()
+		local start2 = s.getTimeMillisec()
+		for i=1, runTimes do
+			shrapnel.checkVoxelExists2(vehicle_id, 0, 0, 0)
+		end
+		local end2 = s.getTimeMillisec()
+		local time1 = (end1 - start1)/runTimes
+		local time2 = (end2 - start2)/runTimes
+		--Print raw
+		s.announce("[Flak Commands]", "Raw time 1: "..(end1-start1).."ms\nRaw time 2: "..(end2-start2).."ms")
+		--Print averaged
+		s.announce("[Flak Commands]", "Time 1: "..time1.."ms\nTime 2: "..time2.."ms")
+		--Print the results of checkVoxelExists1 and 2
+		local output1 = shrapnel.checkVoxelExists(vehicle_id, 0, 0, 0)
+		local output2 = shrapnel.checkVoxelExists2(vehicle_id, 0, 0, 0)
+		s.announce("[Flak Commands]", "Output 1: "..tostring(output1).."\nOutput 2: "..tostring(output2))
 	end
 end
 

@@ -22,14 +22,18 @@ end
 --- @param position SWMatrix the position to place the label
 --- @param text string the text to display
 --- @param length number the length of time to display the label in ticks
+--- @param renderDistance number? the distance the label will render from in meters
 --- @return number|nil ui_id the id of the ui element generated
-function debugging.debugLabel(debugMode, position, text, length)
+function debugging.debugLabel(debugMode, position, text, length, renderDistance)
     if not g_savedata.debug[debugMode] and debugMode ~= "none" then
         return
     end
     if type(length) ~= "number" then
         debugging.printWarning("(debugging.debugLabel) expected number for length but got ",type(length),". Defaulted to 100")
         length = 100
+    end
+    if renderDistance == nil then
+        renderDistance = 1200
     end
     --Get the UI_ID
     local ui_id = nil
@@ -39,13 +43,57 @@ function debugging.debugLabel(debugMode, position, text, length)
         ui_id = s.getMapID()
     end
     local x,y,z = matrix.position(position)
-    server.setPopup(-1, ui_id, "", true, text, x,y,z, 1200)
+    server.setPopup(-1, ui_id, "", true, text, x,y,z, renderDistance)
     taskService:AddTask("freeDebugLabel", length, {-1, ui_id})
 end
 
 function debugging.freeDebugLabel(peer_id, ui_id)
     server.removePopup(peer_id, ui_id)
     table.insert(g_savedata.debugLabelUI, ui_id)
+end
+
+--- @param id any the id of the voxel map
+--- @param transform_matrix SWMatrix the matrix to place the voxel map at
+--- @param debugMode string the debug that needs to be enabled
+function debugging.setVoxelMap(id, transform_matrix, debugMode)
+    if not g_savedata.debug[debugMode] and debugMode ~= "none" then
+        return
+    end
+    debugging.printDebug("Setting voxel map ",id)
+    if g_savedata.debugVoxelMaps[id] ~= nil then
+        local is_success = s.moveVehicle(g_savedata.debugVoxelMaps[id], transform_matrix)
+        d.printDebug("Move success: ",tostring(is_success))
+        return
+    end
+    d.printDebug("Spawning")
+    local addonIndex = s.getAddonIndex()
+    local locationIndex = s.getLocationIndex(addonIndex, "debugVoxelMap")
+    local componentIndex = 0
+    local componentData, is_success = s.getLocationComponentData(addonIndex, locationIndex, componentIndex)
+    if not is_success then
+        debugging.printWarning("Failed to get component data for voxel map ",id,". Addon index: ",addonIndex," Location index: ",locationIndex," Component index: ",componentIndex)
+        return
+    end
+    local componentID = componentData.id
+    local primary_vehicle_id, success, vehicle_ids, group_id = s.spawnAddonVehicle(transform_matrix, addonIndex, componentID)
+    g_savedata.debugVoxelMaps[id] = primary_vehicle_id
+    if success then
+        debugging.printDebug("Spawned voxel map ",id)
+    else
+        debugging.printWarning("Failed to spawn voxel map ",id)
+    end
+end
+
+function debugging.cleanVoxelMap(id)
+    if g_savedata.debugVoxelMaps[id] then
+        local is_success = s.despawnVehicle(g_savedata.debugVoxelMaps[id], true)
+        if is_success then
+            g_savedata.debugVoxelMaps[id] = nil
+            debugging.printDebug("Despawned voxel map ",id)
+        else
+            debugging.printWarning("Failed to despawn voxel map ",id)
+        end
+    end
 end
 
 --Each argument is converted to a string and added together to make the message
