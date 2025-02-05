@@ -125,30 +125,51 @@ end
 --- @param amount number The amount of damage to apply (0-100)
 --- @param radius number the radius to apply the damage over, in meters
 function shrapnel.damageVehicleAtWorldPosition(vehicle_id, position, amount, radius)
-    --Check if 0,0,0 exists. otherwise we need to find another
-    local voxelX, voxelY, voxelZ = 0,0,0
-    if shrapnel.checkVoxelExists(vehicle_id, voxelX, voxelY, voxelZ) == false then
-        --Get the closest voxel
+    local SUPER_DEBUG = true
+    ---[[[
+    --- In Depth Explanation:
+    ---  1. its gets the baseVoxel (the closest voxel to 0,0,0 which exists)
+    ---  2. gets the vehicle position at the baseVoxel
+    ---  3. offsets the vehicle position variable by the baseVoxel so that the vehiclePos is at where 0,0,0 should be
+    ---]]]
+
+    --Get the base voxel to use for getting the vehicle position
+    local baseVoxel = g_savedata.vehicleBaseVoxel[vehicle_id]
+    if baseVoxel == nil then
+        return
     end
+    local voxelX, voxelY, voxelZ = baseVoxel.x, baseVoxel.y, baseVoxel.z
+    
     --Get the vehicle position
-    vehiclePos,success = getVehiclePosCached(vehicle_id)--s.getVehiclePos(vehicle_id,0,0,0)
+    vehiclePos,success = s.getVehiclePos(vehicle_id, voxelX, voxelY, voxelZ)
     if not success then
         d.printError("Shrapnel", SSSWTOOL_SRC_LINE,": Failed to get vehicle position for vehicle ",vehicle_id)
         return false
     end
+    if SUPER_DEBUG then d.debugLabel("shrapnel", vehiclePos, "Raw pos: "..voxelX..", "..voxelY..", "..voxelZ, time.second*3) end
+    
+    --If the used voxels are 0,0,0 then offset the position so that they are at where 0,0,0 would be if it existed
+    if voxelX ~= 0 or voxelY ~= 0 or voxelZ ~= 0 then   
+        vehiclePos = matrix.multiply(vehiclePos, matrix.translation(-voxelX/4, -voxelY/4, -voxelZ/4))
+    end
+    if SUPER_DEBUG then d.debugLabel("shrapnel", vehiclePos, "Detected 0,0,0 ("..vehicle_id..")", 3*time.second) end
+
     --Check if it needs to be offset (for sub bodys)
     if g_savedata.vehicleToMainVehicle[vehicle_id] == vehicle_id then
         --This is the main vehicle, can use direct current position
-        d.debugLabel("shrapnel", vehiclePos, "0,0,0", 3*time.second)
+        
     else
         ---[[
         --- This offset will make sure that the voxel calculations are generated from the pov from the main_vehicle_id, since this can move.
         --- For example, a truck 10 blocks tall. It falls into place after spawn. Instead of calculating 10, calculate the actual voxel
         --- positions for the truck which is how high up from the main vehicle it is.
+        --- 
+        --- Update: This is no longer needed because of the baseVoxel system. Keeping incase i ever need it again
         ---]]
-        local offset = g_savedata.vehicleInitialOffsets[vehicle_id]
-        vehiclePos = matrix.multiply(vehiclePos, matrix.invert(offset))
+        --local offset = g_savedata.vehicleInitialOffsets[vehicle_id]
+        --vehiclePos = matrix.multiply(vehiclePos, offset)
     end
+    
     --Calculate the voxel positions
     local finalMatrix = matrix.multiply(matrix.invert(vehiclePos), position)
     local combinedX, combinedY, combinedZ = matrix.position(finalMatrix)
@@ -158,7 +179,7 @@ function shrapnel.damageVehicleAtWorldPosition(vehicle_id, position, amount, rad
 
     --Debug
     --d.setVoxelMap(vehicle_id, matrix.multiply(vehiclePos, matrix.translation(0,0.2,0)), "shrapnel")
-    d.debugLabel("shrapnel", position, combinedX..","..combinedY..","..combinedZ, 8*time.second)
+    if SUPER_DEBUG then d.debugLabel("shrapnel", position, combinedX..","..combinedY..","..combinedZ, 6*time.second) end
     if success then
         d.printDebug("Hit at ", tostring(combinedX),",", tostring(combinedY),",", tostring(combinedZ), " with radius ", tostring(radius))
         local realPosition, success = s.getVehiclePos(vehicle_id, combinedX, combinedY, combinedZ)

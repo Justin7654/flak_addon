@@ -136,4 +136,18 @@ function util.shallowCopy(original)
     return copy
 end
 
+--- takes in any amount of lists and combines them into one list
+--- @param ... table<number> all the lists you would like to combine together
+--- @return table<number> combined the combined list
+function util.combineList(...)
+	local combined = {}
+	local lists = table.pack(...)
+	for i = 1, lists.n do
+		for j = 1, #lists[i] do
+			table.insert(combined, lists[i][j])
+		end
+	end
+	return combined
+end
+
 return util

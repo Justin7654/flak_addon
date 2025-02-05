@@ -181,8 +181,32 @@ function onVehicleLoad(vehicle_id)
 		if shrapnel.checkVoxelExists(vehicle_id, 0, 0, 0) then
 			--Safe to use 0,0,0
 			g_savedata.vehicleBaseVoxel[vehicle_id] = {x=0, y=0, z=0}
+		elseif g_savedata.vehicleToMainVehicle[vehicle_id] ~= vehicle_id and false then
+			--If its not the main vehicle, use the main vehicle's base voxel
+			local mainVehicle = g_savedata.vehicleToMainVehicle[vehicle_id]
+			g_savedata.vehicleBaseVoxel[vehicle_id] = g_savedata.vehicleBaseVoxel[mainVehicle]
 		else
 			--In case that 0,0,0 is not a valid voxel, find the closest component and use that instead
+			local com = g_savedata.vehicleComponents[vehicle_id]
+			local allComponents = util.combineList(com.batteries, com.buttons, com.dials, com.guns, com.hoppers, com.rope_hooks, com.seats, com.signs, com.tanks)
+			local closest = {dist=math.huge, x=0, y=0, z=0}
+			for _, component in pairs(allComponents) do
+				local x,y,z = component.pos.x, component.pos.y, component.pos.z
+				local dist = x*x + y*y + z*z
+				if dist < closest.dist then
+					closest.dist = dist
+					closest.x = x
+					closest.y = y
+					closest.z = z
+				end
+			end
+			if #allComponents == 0 then
+				d.printDebug("Unable to get base voxel for vehicle ",vehicle_id," because it has no components")
+				--TODO: Maybe brute force scan over a large area of voxels over time using tasks like how the debugVoxels command work?
+			else
+				d.printDebug("Set base voxel for vehicle ",vehicle_id," to ",closest.x,",",closest.y,",",closest.z)
+				g_savedata.vehicleBaseVoxel[vehicle_id] = {x=closest.x, y=closest.y, z=closest.z}
+			end
 		end
 	end
 	if g_savedata.vehicleBBOXs and g_savedata.vehicleBBOXs[vehicle_id] == nil then
@@ -208,7 +232,6 @@ function onGroupSpawn(group_id, peer_id, x, y, z, group_cost)
 		g_savedata.vehicleOwners[vehicle_id] = peer_id
 		--Set vehicleToMainVehicle
 		g_savedata.vehicleToMainVehicle[vehicle_id] = main_vehicle_id
-		--Set vehicleInitialOffsets
 	end
 end
 
