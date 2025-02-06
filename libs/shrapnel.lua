@@ -9,38 +9,54 @@ function shrapnel.tickShrapnelChunk(chunk)
         return d.printError("Shrapnel", "Failed to tick shrapnel chunk, chunk is nil")
     end
 
-    -- Update position
-    chunk.positionX = chunk.positionX + chunk.velocityX
-    chunk.positionY = chunk.positionY + chunk.velocityY
-    chunk.positionZ = chunk.positionZ + chunk.velocityZ
-
-    -- Cache the shrapnel position
-    local chunkPosX, chunkPosY, chunkPosZ = chunk.positionX, chunk.positionY, chunk.positionZ
-
-    -- Attempt to damage near vehicles (TODO: Maybe spatial hashing can make this faster)
-    local hit = false
-    local checks = 0
-    local closest = 100000 --TODO: Make the shrapnel delete itself if its super far away from anything (the plane flew past)
+    --Before starting stepping, pre-decide which vehicles to check since they generally wont change inbetween steps, and it wont matter much if it does change
+    local vehiclesToCheck = {}
+    local futureX = chunk.positionX + (chunk.velocityX * g_savedata.settings.shrapnelSubSteps)
+    local futureY = chunk.positionY + (chunk.velocityY * g_savedata.settings.shrapnelSubSteps)
+    local futureZ = chunk.positionZ + (chunk.velocityZ * g_savedata.settings.shrapnelSubSteps)
     for i,vehicle_id in ipairs(g_savedata.loadedVehicles) do
-        local owner = g_savedata.vehicleOwners[vehicle_id]
-
         --Check if the vehicle is owned by a player so we dont waste time checking AI vehicles or static vehicles
-        if true or owner and owner >= 0 then
-            local vehicleMatrix, success = getVehiclePosCached(vehicle_id)
-            local posX, posY, posZ = matrix.position(vehicleMatrix)
-            --Check if its less than 50m away
-            if math.abs(chunkPosX - posX) < 25 and math.abs(chunkPosY - posY) < 25 and math.abs(chunkPosZ - posZ) < 25 then
-                --Attempt to damage
-                checks = checks + 1
-                local hitPosition = m.translation(chunkPosX, chunkPosY, chunkPosZ)
-                hit = shrapnel.damageVehicleAtWorldPosition(vehicle_id, hitPosition, 15, 0.4)
-                if hit then
-                    d.printDebug("Shrapnel hit on vehicle ",vehicle_id," spawned by ",g_savedata.vehicleOwners[vehicle_id] or "nil","!")
-                    break
-                end 
+        local owner = g_savedata.vehicleOwners[vehicle_id]
+        if owner and owner >= 0 then
+            --Check if it has a baseVoxel, otherwise it cant be checked
+            if g_savedata.vehicleBaseVoxel[vehicle_id] ~= nil then
+                --Check if its less than 25m away
+                local vehicleMatrix = getVehiclePosCached(vehicle_id)
+                local posX, posY, posZ = matrix.position(vehicleMatrix)
+                if math.abs(futureX - posX) < 30 and math.abs(futureY - posY) < 30 and math.abs(futureZ - posZ) < 30 then
+                    table.insert(vehiclesToCheck, vehicle_id)
+                end
             end
         end
-        ::tickShrapnel_continue::
+    end
+
+    --Start stepping the position and checking if its hit anything yet
+    local hit = false
+    local checks = 0
+    for step=1, g_savedata.settings.shrapnelSubSteps do
+        -- Update position
+        chunk.positionX = chunk.positionX + chunk.velocityX
+        chunk.positionY = chunk.positionY + chunk.velocityY
+        chunk.positionZ = chunk.positionZ + chunk.velocityZ
+
+        -- Cache the shrapnel position
+        local chunkPosX, chunkPosY, chunkPosZ = chunk.positionX, chunk.positionY, chunk.positionZ
+
+        --Attempt to damage near vehicles
+        for i,vehicle_id in ipairs(vehiclesToCheck) do
+            --Attempt to damage
+            checks = checks + 1
+            local hitPosition = m.translation(chunkPosX, chunkPosY, chunkPosZ)
+            hit = shrapnel.damageVehicleAtWorldPosition(vehicle_id, hitPosition, 5, 0.4)
+            if hit then
+                break
+            end
+        end
+
+        --Break out of the stepping if it hit something
+        if hit then
+            break
+        end
     end
     
     --Shrapnel debug
@@ -50,9 +66,9 @@ function shrapnel.tickShrapnelChunk(chunk)
         end
         local x, y, z = chunk.positionX, chunk.positionY, chunk.positionZ
         local text = "Shrapnel\nChecks: "..checks
-        server.setPopup(-1, chunk.ui_id, "", true, text, chunkPosX,chunkPosY,chunkPosZ, 600)
+        server.setPopup(-1, chunk.ui_id, "", true, text, x, y, z, 300)
         if hit then
-            --d.debugLabel("shrapnel", m.translation(x, y, z), "Hit", 5*time.second)
+            d.debugLabel("shrapnel", m.translation(x, y, z), "Hit", 5*time.second)
         end
     end
     
@@ -71,7 +87,7 @@ end
 --- @param sourcePos SWMatrix The position to spawn the shrapnel at
 --- @param shrapnelAmount number The amount of shrapnel to spawn
 function shrapnel.explosion(sourcePos, shrapnelAmount)
-    local SHRAPNEL_SPEED = 55
+    local SHRAPNEL_SPEED = 95
     --Cache some globals as locals
     local random = math.random
     local sin = math.sin
@@ -95,10 +111,19 @@ end
 --- @param velocityY number The y velocity of the shrapnel in m/s
 --- @param velocityZ number The z velocity of the shrapnel in m/s
 function shrapnel.spawnShrapnel(position, velocityX, velocityY, velocityZ)
+    if s.getGameSettings().vehicle_damage == false then
+        return
+    end
+
     --Convert velocitys to tick/s so we dont need to do this when ticking the shrapnel
     velocityX = velocityX / time.second
     velocityY = velocityY / time.second
     velocityZ = velocityZ / time.second
+
+    --Divide the velocity by the amount of substeps so that the shrapnel stays the same speed as substeps increase
+    velocityX = velocityX / g_savedata.settings.shrapnelSubSteps
+    velocityY = velocityY / g_savedata.settings.shrapnelSubSteps
+    velocityZ = velocityZ / g_savedata.settings.shrapnelSubSteps
 
     --Convert the position matrix to just xyz so that it can be stored cheaper and retrieved faster during ticks
     local x, y, z = matrix.position(position)
@@ -114,7 +139,7 @@ function shrapnel.spawnShrapnel(position, velocityX, velocityY, velocityZ)
         velocityY = velocityY,
         velocityZ = velocityZ,
         ui_id = nil,
-        life = 120,
+        life = 90,
     }
     taskService:AddTask("tickShrapnelChunk", 1,  {shrapnelChunk})
 end
@@ -122,10 +147,12 @@ end
 --- Damages a vehicle using a world position instead of a voxel position.
 --- @param vehicle_id number The id of the vehicle to damage
 --- @param position SWMatrix The position in the world to damage the vehicle at
---- @param amount number The amount of damage to apply (0-100)
---- @param radius number the radius to apply the damage over, in meters
-function shrapnel.damageVehicleAtWorldPosition(vehicle_id, position, amount, radius)
-    local SUPER_DEBUG = true
+--- @return boolean success weather the damage was successful or not
+--- @return number voxelX the x voxel position
+--- @return number voxelY the y voxel position
+--- @return number voxelZ the z voxel position
+function shrapnel.getVehicleVoxelAtWorldPosition(vehicle_id, position, amount, radius)
+    local SUPER_DEBUG = false
     ---[[[
     --- In Depth Explanation:
     ---  1. its gets the baseVoxel (the closest voxel to 0,0,0 which exists)
@@ -136,7 +163,7 @@ function shrapnel.damageVehicleAtWorldPosition(vehicle_id, position, amount, rad
     --Get the base voxel to use for getting the vehicle position
     local baseVoxel = g_savedata.vehicleBaseVoxel[vehicle_id]
     if baseVoxel == nil then
-        return
+        return false,0,0,0
     end
     local voxelX, voxelY, voxelZ = baseVoxel.x, baseVoxel.y, baseVoxel.z
     
@@ -144,39 +171,27 @@ function shrapnel.damageVehicleAtWorldPosition(vehicle_id, position, amount, rad
     vehiclePos,success = s.getVehiclePos(vehicle_id, voxelX, voxelY, voxelZ)
     if not success then
         d.printError("Shrapnel", SSSWTOOL_SRC_LINE,": Failed to get vehicle position for vehicle ",vehicle_id)
-        return false
+        return false,0,0,0
     end
-    if SUPER_DEBUG then d.debugLabel("shrapnel", vehiclePos, "Raw pos: "..voxelX..", "..voxelY..", "..voxelZ, time.second*3) end
+    if SUPER_DEBUG then d.debugLabel("shrapnel", vehiclePos, "Raw pos: "..voxelX..", "..voxelY..", "..voxelZ.." ("..vehicle_id..")", time.second*2) end
     
     --If the used voxels are 0,0,0 then offset the position so that they are at where 0,0,0 would be if it existed
     if voxelX ~= 0 or voxelY ~= 0 or voxelZ ~= 0 then   
         vehiclePos = matrix.multiply(vehiclePos, matrix.translation(-voxelX/4, -voxelY/4, -voxelZ/4))
     end
-    if SUPER_DEBUG then d.debugLabel("shrapnel", vehiclePos, "Detected 0,0,0 ("..vehicle_id..")", 3*time.second) end
-
-    --Check if it needs to be offset (for sub bodys)
-    if g_savedata.vehicleToMainVehicle[vehicle_id] == vehicle_id then
-        --This is the main vehicle, can use direct current position
-        
-    else
-        ---[[
-        --- This offset will make sure that the voxel calculations are generated from the pov from the main_vehicle_id, since this can move.
-        --- For example, a truck 10 blocks tall. It falls into place after spawn. Instead of calculating 10, calculate the actual voxel
-        --- positions for the truck which is how high up from the main vehicle it is.
-        --- 
-        --- Update: This is no longer needed because of the baseVoxel system. Keeping incase i ever need it again
-        ---]]
-        --local offset = g_savedata.vehicleInitialOffsets[vehicle_id]
-        --vehiclePos = matrix.multiply(vehiclePos, offset)
-    end
+    if SUPER_DEBUG then d.debugLabel("shrapnel", vehiclePos, "Detected 0,0,0 ("..vehicle_id..")", 2*time.second) end
     
     --Calculate the voxel positions
     local finalMatrix = matrix.multiply(matrix.invert(vehiclePos), position)
     local combinedX, combinedY, combinedZ = matrix.position(finalMatrix)
     combinedX, combinedY, combinedZ = math.floor(combinedX*4), math.floor(combinedY*4), math.floor(combinedZ*4) --Each voxel is 0.25m and then round
 
-	local success = s.addDamage(vehicle_id, amount, combinedX, combinedY, combinedZ, radius)
+    if SUPER_DEBUG then d.debugLabel("shrapnel", position, combinedX..","..combinedY..","..combinedZ, 6*time.second) end
 
+    return true, combinedX, combinedY, combinedZ
+    --[[ Left over code from when this damaged
+	local success = s.addDamage(vehicle_id, amount, combinedX, combinedY, combinedZ, radius)
+    
     --Debug
     --d.setVoxelMap(vehicle_id, matrix.multiply(vehiclePos, matrix.translation(0,0.2,0)), "shrapnel")
     if SUPER_DEBUG then d.debugLabel("shrapnel", position, combinedX..","..combinedY..","..combinedZ, 6*time.second) end
@@ -184,13 +199,20 @@ function shrapnel.damageVehicleAtWorldPosition(vehicle_id, position, amount, rad
         d.printDebug("Hit at ", tostring(combinedX),",", tostring(combinedY),",", tostring(combinedZ), " with radius ", tostring(radius))
         local realPosition, success = s.getVehiclePos(vehicle_id, combinedX, combinedY, combinedZ)
 	    if success then
-            d.debugLabel("shrapnel", realPosition, "Real Voxel", 3*time.second)
+            d.debugLabel("shrapnel", realPosition, "Real Voxel", 2*time.second)
         end
     end
 
-    return success
+    return success]]
 end
 
+function shrapnel.damageVehicleAtWorldPosition(vehicle_id, position, amount, radius)
+    local success, voxelX, voxelY, voxelZ = shrapnel.getVehicleVoxelAtWorldPosition(vehicle_id, position, amount, radius)
+    if success then
+        return s.addDamage(vehicle_id, amount, voxelX, voxelY, voxelZ, radius)
+    end
+    return false
+end
 --- @param vehicle_id number The id of the vehicle to check
 --- @param x number The x voxel position to check
 --- @param y number The y voxel position to check

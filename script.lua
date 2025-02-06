@@ -18,13 +18,13 @@ bboxManager = require("libs.bboxManager")
 g_savedata = {
 	tickCounter = 0,
 	settings = {
-		simulateShrapnel = property.checkbox("Shrapnel Simulation (may impact performance)", true),
+		simulateShrapnel = property.checkbox("Shrapnel Simulation (impacts performance)", true),
 		ignoreWeather = property.checkbox("Weather does not affect flak accuracy",  false),
 		flakShellSpeed = property.slider("Flak Shell Speed (m/s)", 100, 1000, 100, 500),
 		fireRate = property.slider("Flak Fire Rate (seconds between shots)", 1, 20, 1, 4),
 		minAlt = property.slider("Minimum Fire Altitude Base", 100, 700, 50, 200),
 		flakAccuracyMult = property.slider("Flak Accuracy Multiplier", 0.5, 1.5, 0.1, 1),
-		shrapnelSubSteps = property.slider("Flak simulation substeps (ADVANCED - SIGNIFICANT PERFORAMNCE IMPACT)", 1, 3, 2, 2)
+		shrapnelSubSteps = property.slider("Flak simulation substeps (SIGNIFICANT PERFORAMNCE IMPACT)", 1, 3, 2, 2)
 	},
 	fun = {
 		noPlayerIsSafe = {
@@ -82,7 +82,7 @@ cachedPositions = {}
 --- Offers a significant speed boost to the shrapnel system
 function getVehiclePosCached(vehicle_id)
 	if cachedPositions[vehicle_id] == nil then
-		cachedPositions[vehicle_id] = table.pack(s.getVehiclePos(vehicle_id,0,0,0))
+		cachedPositions[vehicle_id] = table.pack(s.getVehiclePos(vehicle_id))
 	end
 	return table.unpack(cachedPositions[vehicle_id])
 end
@@ -339,6 +339,14 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 				s.announce("[Flak Commands]", "Flak Accuracy Multiplier set to "..g_savedata.settings.flakAccuracyMult.." by "..s.getPlayerName(user_peer_id))
 			else
 				s.announce("[Flak Commands]", "Current Flak Accuracy Multiplier: "..tostring(g_savedata.settings.flakAccuracyMult))
+			end
+		end
+		if chosenKey == "substeps" then
+			if chosenValue then
+				g_savedata.settings.shrapnelSubSteps = tonumber(chosenValue)
+				s.announce("[Flak Commands]", "Flak Simulation Substeps set to "..g_savedata.settings.shrapnelSubSteps.." by "..s.getPlayerName(user_peer_id))
+			else
+				s.announce("[Flak Commands]", "Current Flak Simulation Substeps: "..tostring(g_savedata.settings.shrapnelSubSteps))
 			end
 		end
 	elseif command == "testshrapnel" then
