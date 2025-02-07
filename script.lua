@@ -56,7 +56,9 @@ g_savedata = {
 	taskDebugUI = server.getMapID(), --The UI_ID for the task debug UI screen
 	debugLabelUI = {}, --UI_IDs for debug labels that are not in use
 	debugAI = {}, --Used by debugging AI vehicles. Character IDs
-	debugVoxelMaps = {} --Used by debugging voxel positions. Vehicle IDS
+	debugVoxelMaps = {}, --Used by debugging voxel positions. Vehicle IDS
+	shrapnelChunks = {}, ---@type table<number, shrapnelChunk> A list of every active shrapnel object indexed by its ID
+	shrapnelCurrentID = 0,
 }
 
 --- @alias callbackID "freeDebugLabel" | "flakExplosion" | "tickShrapnelChunk" | "debugVoxelPositions"
@@ -77,12 +79,14 @@ time = { -- the time unit in ticks
 s = server
 m = matrix
 
+matrix.emptyMatrix = matrix.translation(0,0,0)
+
 cachedPositions = {}
---- Same as server.getVehiclePos but it caches the result for the current tick. Use when this operation might be repeated.
---- Offers a significant speed boost to the shrapnel system
-function getVehiclePosCached(vehicle_id)
+--- Same as server.getVehiclePos but it caches the result for the current tick. Use when this operation might be repeated
+--- Note: Only use if you know that the voxel location is not going to change, since it will use the first one and not change it
+function getVehiclePosCached(vehicle_id, voxel_x, voxel_y, voxel_z)
 	if cachedPositions[vehicle_id] == nil then
-		cachedPositions[vehicle_id] = table.pack(s.getVehiclePos(vehicle_id))
+		cachedPositions[vehicle_id] = table.pack(s.getVehiclePos(vehicle_id, voxel_x, voxel_y, voxel_z))
 	end
 	return table.unpack(cachedPositions[vehicle_id])
 end
@@ -134,6 +138,9 @@ function onTick(game_ticks)
 			end
 		end
 	end
+
+	--Tick shrapnel
+	shrapnel:tickAll()
 	
 	--Fun Events
 	if g_savedata.fun.noPlayerIsSafe.active then
@@ -366,7 +373,10 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		local playerPos = s.getPlayerPos(user_peer_id)
 		playerPos[14] = playerPos[14] + 5 --Move it up 5m
 		s.announce("[Flak Commands]", "Spawned "..num.." shrapnel at your position")
+		local startTime = s.getTimeMillisec()
 		shrapnel.explosion(playerPos, num)
+		local endTime = s.getTimeMillisec()
+		d.printDebug("Spawn time: "..(endTime - startTime).."ms")
 	elseif command == "testkeypads" and args[1] then
 		local vehicle_id = tonumber(args[1])
 		if type(vehicle_id) == "number" then
@@ -396,12 +406,12 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		local runTimes = 50000
 		local start1 = s.getTimeMillisec()
 		for i=1, runTimes do
-			shrapnel.checkVoxelExists(vehicle_id, 0, 0, 0)
+			
 		end
 		local end1 = s.getTimeMillisec()
 		local start2 = s.getTimeMillisec()
 		for i=1, runTimes do
-			shrapnel.checkVoxelExists2(vehicle_id, 0, 0, 0)
+			
 		end
 		local end2 = s.getTimeMillisec()
 		local time1 = (end1 - start1)/runTimes
@@ -410,10 +420,9 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		s.announce("[Flak Commands]", "Raw time 1: "..(end1-start1).."ms\nRaw time 2: "..(end2-start2).."ms")
 		--Print averaged
 		s.announce("[Flak Commands]", "Time 1: "..time1.."ms\nTime 2: "..time2.."ms")
-		--Print the results of checkVoxelExists1 and 2
-		local output1 = shrapnel.checkVoxelExists(vehicle_id, 0, 0, 0)
-		local output2 = shrapnel.checkVoxelExists2(vehicle_id, 0, 0, 0)
-		s.announce("[Flak Commands]", "Output 1: "..tostring(output1).."\nOutput 2: "..tostring(output2))
+	elseif command == "test" then
+		local vehicle_id = tonumber(args[1])
+		d.printDebug(util.tableToString(g_savedata.debug))
 	end
 end
 

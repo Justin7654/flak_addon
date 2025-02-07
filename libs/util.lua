@@ -150,4 +150,59 @@ function util.combineList(...)
 	return combined
 end
 
+---Credit to toastery
+--- Credit: Toastery (USE: Debugging) (Helped me find the batterys-batteries typo that i debugged for an entire 2 hours)
+--- Returns a string in a format that looks like how the table would be written.
+---@param t table the table you want to turn into a string
+---@return string str the table but in string form.
+function util.tableToString(t)
+
+	--- @return boolean is_whole returns true if x is whole, false if not, nil if x is nil
+	function isWhole(x) -- returns wether x is a whole number or not
+		return math.type(x) == "integer"
+	end
+
+	if type(t) ~= "table" then
+		d.printDebug(("(string.fromTable) t is not a table! type of t: %s t: %s"):format(type(t), t), true, -1)
+	end
+
+	local function tableToString(T, S, ind)
+		S = S or "{"
+		ind = ind or "  "
+
+		local table_length = #T
+		local table_counter = 0
+
+		for index, value in pairs(T) do
+
+			table_counter = table_counter + 1
+			if type(index) == "number" then
+				S = ("%s\n%s[%s] = "):format(S, ind, tostring(index))
+			elseif type(index) == "string" and tonumber(index) and isWhole(tonumber(index)) then
+				S = ("%s\n%s\"%s\" = "):format(S, ind, index)
+			else
+				S = ("%s\n%s%s = "):format(S, ind, tostring(index))
+			end
+
+			if type(value) == "table" then
+				S = ("%s{"):format(S)
+				S = tableToString(value, S, ind.."  ")
+			elseif type(value) == "string" then
+				S = ("%s\"%s\""):format(S, tostring(value))
+			else
+				S = ("%s%s"):format(S, tostring(value))
+			end
+
+			S = ("%s%s"):format(S, table_counter == table_length and "" or ",")
+		end
+
+		S = ("%s\n%s}"):format(S, string.gsub(ind, "  ", "", 1))
+
+		return S
+	end
+
+	return tableToString(t)
+end
+
+
 return util
