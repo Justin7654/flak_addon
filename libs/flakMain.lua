@@ -296,7 +296,7 @@ function flakMain.fireFlak(sourceMatrix, targetMatrix) --Convert to using flakOb
 
     --Randomize the targetMatrix based on spread
     spread = math.floor(spread)
-    x = x + math.random(-spread, spread)
+    x = x + math.random(-spread, spread) --spread has no integer representation error. TODO: Fix 2/8/2025
     alt = alt + math.random(-spread, spread)
     z = z + math.random(-spread, spread)
     local resultMatrix = matrix.translation(x,alt, z)
