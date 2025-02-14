@@ -8,9 +8,16 @@ json = require("libs.json")
 
 function debugging.tickDebugs()
     if g_savedata.debug.task then
-        local taskDebugText = "Total Tasks: "..tostring(util.getTableLength(g_savedata.tasks)).."\nTask List: \n"
+        local total = util.getTableLength(g_savedata.tasks)
+        local taskDebugText = "Total Tasks: "..tostring(total).."\nTask List: \n"
+        local num = 0
         for id, task in pairs(g_savedata.tasks) do
             taskDebugText = taskDebugText.."Task "..task.callback.." ("..task.id..")\nRemaining: "..tostring(g_savedata.tickCounter-task.endTime).."\n"
+            num = num + 1
+            if num >= 8 then
+                taskDebugText = taskDebugText.."... "..(total-num).." more"
+                break
+            end
         end
         server.setPopupScreen(-1, g_savedata.taskDebugUI, "", true, taskDebugText, 0.6, 0)
     elseif g_savedata.taskDebugUI then
