@@ -81,19 +81,10 @@ m = matrix
 
 matrix.emptyMatrix = matrix.translation(0,0,0)
 
-cachedPositions = {}
---- Same as server.getVehiclePos but it caches the result for the current tick. Use when this operation might be repeated
---- Note: Only use if you know that the voxel location is not going to change, since it will use the first one and not change it
-function getVehiclePosCached(vehicle_id, voxel_x, voxel_y, voxel_z)
-	if cachedPositions[vehicle_id] == nil then
-		cachedPositions[vehicle_id] = table.pack(s.getVehiclePos(vehicle_id, voxel_x, voxel_y, voxel_z))
-	end
-	return table.unpack(cachedPositions[vehicle_id])
-end
-
 ---@param game_ticks number the number of ticks since the last onTick call (normally 1, while sleeping 400.)
 function onTick(game_ticks)
     g_savedata.tickCounter = g_savedata.tickCounter + 1
+	d.startTrace("onTick")
 
 	--Loop through all flak once every 10 seconds and if they are targetting a player higher than 150m then
 	local updateRate = time.second
@@ -101,7 +92,7 @@ function onTick(game_ticks)
     for index, flak in pairs(g_savedata.spawnedFlak) do
 		--Check if its time to update target data
 		local updated_pos = false
-		if isTickID(flak.tick_id, 60) then
+		if isTickID(flak.tick_id, updateRate) then
 			local targetMatrix = flakMain.getFlakTarget(flak)
 			if targetMatrix ~= nil then
 				aiming.addPositionData(flak.targetPositionData, targetMatrix)
@@ -110,7 +101,7 @@ function onTick(game_ticks)
 				flak.targetPositionData = aiming.newRecentPositionData() --Reset it
 			end
 		end
-
+		
 		--Check if its time to fire
 		if isTickID(flak.tick_id, fireRate) then
 			--Check if theres any targets
@@ -120,7 +111,7 @@ function onTick(game_ticks)
 			if targetMatrix ~= nil and aiming.isPositionDataFull(flak.targetPositionData) then --Either not airborne or the AI doesnt have a target anymore. Dont fire
 				--Make sure position was updated this tick
 				if not updated_pos then
-					d.printWarning("Did not update position this tick!")
+					d.printWarning("Did not update position this tick! This should never happen and will cause flak lead issues")
 				end
 
 				--Calculate lead
@@ -146,7 +137,7 @@ function onTick(game_ticks)
 	if g_savedata.fun.noPlayerIsSafe.active then
 		for _, player in pairs(s.getPlayers()) do
 			playerPosition, success = s.getPlayerPos(player.id)
-			if success and isTickID(1, math.floor(rate/g_savedata.fun.noPlayerIsSafe.difficulty)) or math.random(1,60) == 1 then
+			if success and isTickID(1, math.floor(updateRate/g_savedata.fun.noPlayerIsSafe.difficulty)) or math.random(1,60) == 1 then
 				flakMain.fireFlak(playerPosition, playerPosition)
 				g_savedata.fun.noPlayerIsSafe.shots = g_savedata.fun.noPlayerIsSafe.shots + 1
 			end
@@ -155,7 +146,7 @@ function onTick(game_ticks)
 	
 	taskService:handleTasks()
 	d.tickDebugs()
-	cachedPositions = {}
+	d.endTrace("onTick")
 end
 
 function onVehicleLoad(vehicle_id)
@@ -423,6 +414,21 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 	elseif command == "test" then
 		local vehicle_id = tonumber(args[1])
 		d.printDebug(util.tableToString(g_savedata.debug))
+	elseif command == "printprofile" then
+		local beforeState = g_savedata.debug.chat
+		g_savedata.debug.chat = true
+		d.printProfile()
+		d.printTraceJSON()
+		g_savedata.debug.chat = beforeState
+	elseif command == "clearprofile" then
+		local beforeState = g_savedata.debug.chat
+		g_savedata.debug.chat = true
+		d.clearProfile()
+		g_savedata.debug.chat = beforeState
+	elseif command == "checkprofile" then
+		debugging.checkOpenStacks()
+	else
+		s.announce("[Flak Commands]", "Command not found")
 	end
 end
 
