@@ -4,7 +4,6 @@
 
 
 debugging = {}
-json = require("libs.json")
 
 function debugging.tickDebugs()
     if g_savedata.debug.task then
@@ -154,18 +153,17 @@ end
 
 profileStack = {} ---@type stackData[]
 profileData = {}
-profiling = true
+profiling = false
 function debugging.startProfile(name)
     if profiling == false then return end
     ---@class stackData
     local stackData = {name = name, otherTime = 0, startTime = s.getTimeMillisec()}
     table.insert(profileStack, stackData)
-    debugging.startTrace(name)
 end
 
 function debugging.endProfile(name)
     if profiling == false then return end
-    debugging.endTrace(name)
+
     for i, stackData in pairs(profileStack) do
         if stackData.name == name then
             local endTime = s.getTimeMillisec()
@@ -185,7 +183,6 @@ function debugging.endProfile(name)
             table.remove(profileStack, i)
         end
     end
-    d.printDebug("Ending profile for ",name)
 end
 
 function debugging.printProfile()
@@ -211,44 +208,6 @@ end
 function debugging.checkOpenStacks()
     for i in pairs(profileStack) do
         d.printWarning("Open stack: ",profileStack[i].name)
-    end
-end
-
-traces = {}
-inProgressTraces = {}
-
-
-function debugging.startTrace(name)
-    if not inProgressTraces[name] then
-        inProgressTraces[name] = {}
-    end
-    table.insert(inProgressTraces[name], s.getTimeMillisec())
-    table.insert(traces, {name = name, type = "start", time = s.getTimeMillisec()})
-end
-
-function debugging.endTrace(name)
-    if not inProgressTraces[name] then
-        debugging.printWarning('(end_trace) Unknown trace "'..name..'"')
-        return
-    end
-    local startTime = table.remove(inProgressTraces[name])
-    table.insert(traces, {
-        name = name,
-        type = "end",
-        time_taken = s.getTimeMillisec() - startTime,
-        time = s.getTimeMillisec()
-    })
-end
-
-function debugging.printTraceJSON()
-    local jsonString = json.stringify(traces)
-    --Split up the jsonString into 100 character chunks
-    local chunkSize = 900
-    local i = 1
-    while i < #jsonString do
-        local chunk = jsonString:sub(i, i+(chunkSize-1))
-        debug.log("PROF_START|"..chunk)
-        i = i + chunkSize
     end
 end
 

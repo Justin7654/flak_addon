@@ -84,7 +84,6 @@ matrix.emptyMatrix = matrix.translation(0,0,0)
 ---@param game_ticks number the number of ticks since the last onTick call (normally 1, while sleeping 400.)
 function onTick(game_ticks)
     g_savedata.tickCounter = g_savedata.tickCounter + 1
-	d.startTrace("onTick")
 
 	--Loop through all flak once every 10 seconds and if they are targetting a player higher than 150m then
 	local updateRate = time.second
@@ -146,7 +145,6 @@ function onTick(game_ticks)
 	
 	taskService:handleTasks()
 	d.tickDebugs()
-	d.endTrace("onTick")
 end
 
 function onVehicleLoad(vehicle_id)

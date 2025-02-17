@@ -20,19 +20,26 @@ function shrapnel.tickAll()
     for _,vehicle_id in ipairs(g_savedata.loadedVehicles) do
         --Check if the vehicle is owned by a player so we dont waste time checking AI vehicles or static vehicles
         local owner = vehicleOwners[vehicle_id]
-        if owner and owner >= 0 then
+        local allowMissionVehicles = true
+        if owner and owner >= 0 or allowMissionVehicles then
             --Check if it has a baseVoxel, otherwise it cant be checked
             if baseVoxels[vehicle_id] ~= nil then
                 --Should be valid, just make sure that you can get its data fine
                 local vehicleMatrix, posSuccess = s.getVehiclePos(vehicle_id)
                 if posSuccess then
-                    local zeroPosSuccess,vehicleZeroPosition = shrapnel.calculateVehicleVoxelZeroPosition(vehicle_id)
-                    if zeroPosSuccess then
-                        --This is a valid vehicle. Insert into the tables
-                        local vehicleX, vehicleY, vehicleZ = matrix.position(vehicleMatrix)
-                        table.insert(vehiclesToCheck, vehicle_id)
-                        vehiclePositions[vehicle_id] = {vehicleX, vehicleY, vehicleZ}
-                        vehicleZeroPositions[vehicle_id] = vehicleZeroPosition
+                    --Check that its higher than the base altitude to exclude vehicles that cant be targetted by flak
+                    local x,y,z = matrix.position(vehicleMatrix)
+                    if y > g_savedata.settings.minAlt then
+                        d.startProfile("calculateVehicleVoxelZeroPosition")
+                        local zeroPosSuccess,vehicleZeroPosition = shrapnel.calculateVehicleVoxelZeroPosition(vehicle_id)
+                        d.endProfile("calculateVehicleVoxelZeroPosition")
+                        if zeroPosSuccess then
+                            --This is a valid vehicle. Insert into the tables
+                            local vehicleX, vehicleY, vehicleZ = matrix.position(vehicleMatrix)
+                            table.insert(vehiclesToCheck, vehicle_id)
+                            vehiclePositions[vehicle_id] = {vehicleX, vehicleY, vehicleZ}
+                            vehicleZeroPositions[vehicle_id] = vehicleZeroPosition
+                        end
                     end
                 end
             end
@@ -251,13 +258,11 @@ end
 --- @return boolean success if it was successfully calculated. This can fail for several reasons
 --- @return SWMatrix vehiclePosZero
 function shrapnel.calculateVehicleVoxelZeroPosition(vehicle_id)
-    d.startProfile("calculateVehicleVoxelZeroPosition")
     local SUPER_DEBUG = false
 
     --Get the base voxel to use for getting the vehicle position
     local baseVoxel = g_savedata.vehicleBaseVoxel[vehicle_id]
     if baseVoxel == nil then
-        d.endProfile("calculateVehicleVoxelZeroPosition")
         return false, matrix.translation(0,0,0)
     end
     local voxelX, voxelY, voxelZ = baseVoxel.x, baseVoxel.y, baseVoxel.z
@@ -266,7 +271,6 @@ function shrapnel.calculateVehicleVoxelZeroPosition(vehicle_id)
     local vehiclePos,success = s.getVehiclePos(vehicle_id, voxelX, voxelY, voxelZ)
     if not success then
         d.printError("Shrapnel", SSSWTOOL_SRC_LINE,": Failed to get vehicle position for vehicle ",vehicle_id)
-        d.endProfile("calculateVehicleVoxelZeroPosition")
         return false, matrix.translation(0,0,0)
     end
     if SUPER_DEBUG then d.debugLabel("shrapnel", vehiclePos, "Raw pos: "..voxelX..", "..voxelY..", "..voxelZ.." ("..vehicle_id..")", time.second) end
@@ -276,7 +280,7 @@ function shrapnel.calculateVehicleVoxelZeroPosition(vehicle_id)
         vehiclePos = matrix.multiply(vehiclePos, matrix.translation(-voxelX/4, -voxelY/4, -voxelZ/4))
     end
     if SUPER_DEBUG then d.debugLabel("shrapnel", vehiclePos, "Detected 0,0,0 ("..vehicle_id..")", time.second) end
-    d.endProfile("calculateVehicleVoxelZeroPosition")
+    
     return true, vehiclePos
 end
 
