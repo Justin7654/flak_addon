@@ -73,9 +73,9 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
         --Check if its more than 25m away from the final position of this tick
         local vehicleMatrix = vehiclePositions[vehicle_id]
         local posX, posY, posZ = vehicleMatrix[1], vehicleMatrix[2], vehicleMatrix[3]
-        --if math.abs(futureX - posX) < 30 and math.abs(futureY - posY) < 30 and math.abs(futureZ - posZ) < 30 then
+        if math.abs(futureX - posX) < 30 and math.abs(futureY - posY) < 30 and math.abs(futureZ - posZ) < 30 then
             table.insert(finalVehicles, vehicle_id)
-        --end
+        end
     end
 
     --Start stepping the position and checking if its hit anything

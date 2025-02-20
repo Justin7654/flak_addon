@@ -24,7 +24,8 @@ g_savedata = {
 		fireRate = property.slider("Flak Fire Rate (seconds between shots)", 1, 20, 1, 4),
 		minAlt = property.slider("Minimum Fire Altitude Base", 100, 700, 50, 200),
 		flakAccuracyMult = property.slider("Flak Accuracy Multiplier", 0.5, 1.5, 0.1, 1),
-		shrapnelSubSteps = property.slider("Flak simulation substeps (SIGNIFICANT PERFORAMNCE IMPACT)", 1, 3, 2, 2)
+		shrapnelSubSteps = property.slider("Flak simulation substeps (SIGNIFICANT PERFORAMNCE IMPACT)", 1, 3, 2, 2),
+		shrapnelBombSkipping = property.checkbox("(ADVANCED) Shrapnel optimization 1 (disables collision checks for likely bombs/missiles, very significantly improving performance)", true)
 	},
 	fun = {
 		noPlayerIsSafe = {
@@ -50,6 +51,7 @@ g_savedata = {
 		task = false,
 		shrapnel = false,
 		bbox = false,
+		detected_bombs = false
 	},
 	tasks = {}, --List of all tasks
 	taskCurrentID = 0, --The current ID for tasks
@@ -177,7 +179,7 @@ function onVehicleLoad(vehicle_id)
 		if shrapnel.checkVoxelExists(vehicle_id, 0, 0, 0) then
 			--Safe to use 0,0,0
 			g_savedata.vehicleBaseVoxel[vehicle_id] = {x=0, y=0, z=0}
-		elseif g_savedata.vehicleToMainVehicle[vehicle_id] ~= vehicle_id and false then
+		elseif g_savedata.vehicleToMainVehicle[vehicle_id] ~= vehicle_id and false then --Why is this "and false"? safe to remove?
 			--If its not the main vehicle, use the main vehicle's base voxel
 			local mainVehicle = g_savedata.vehicleToMainVehicle[vehicle_id]
 			g_savedata.vehicleBaseVoxel[vehicle_id] = g_savedata.vehicleBaseVoxel[mainVehicle]
@@ -196,9 +198,14 @@ function onVehicleLoad(vehicle_id)
 					closest.z = z
 				end
 			end
+			
 			if #allComponents == 0 then
 				d.printDebug("Unable to get base voxel for vehicle ",vehicle_id," because it has no components")
 				--TODO: Maybe brute force scan over a large area of voxels over time using tasks like how the debugVoxels command work?
+			elseif g_savedata.settings.shrapnelBombSkipping and #allComponents ~= 0 and #allComponents == #com.guns then
+				--Skip if it doesn't have a 0,0,0 block, and all its components are bombs. Very high success rate and suprisingly low false positive rate
+				d.debugLabel("detected_bombs", s.getVehiclePos(vehicle_id), "Likely bomb? "..tostring(#com.guns), 5*time.second)
+				d.printDebug("Skipping getting base voxel for vehicle ",vehicle_id," because its likely a bomb")
 			else
 				d.printDebug("Set base voxel for vehicle ",vehicle_id," to ",closest.x,",",closest.y,",",closest.z)
 				g_savedata.vehicleBaseVoxel[vehicle_id] = {x=closest.x, y=closest.y, z=closest.z}
