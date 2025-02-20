@@ -70,18 +70,6 @@ function util.calculateVelocity(matrix1, matrix2, ticks_between) --Credit: Toast
 	return util.calculateEuclideanDistance(matrix1[13], matrix2[13], matrix1[15], matrix2[15], matrix1[14], matrix2[14]) * 60/ticks_between
 end
 
---# returns the acceleration, given 3 matrices. Each matrix must be the same ticks between eachother.
----@param matrix1 SWMatrix the most recent matrix
----@param matrix2 SWMatrix the second most recent matrix
----@param matrix3 SWMatrix the third most recent matrix
----@return number acceleration the acceleration in m/s
-function matrix.calculateAcceleration(matrix1, matrix2, matrix3, ticks_between)
-	local v1 = util.calculateVelocity(matrix1, matrix2, ticks_between) -- last change in velocity
-	local v2 = util.calculateVelocity(matrix2, matrix3, ticks_between) -- change in velocity from ticks_between ago
-	-- returns the acceleration
-	return (v1-v2)/(ticks_between/60)
-end
-
 ---@diagnostic disable-next-line: undefined-doc-param
 ---@param x1 number x coordinate of position 1
 ---@diagnostic disable-next-line: undefined-doc-param
@@ -148,6 +136,15 @@ function util.combineList(...)
 		end
 	end
 	return combined
+end
+
+--- Returns x,y,z when given a matrix. Over 100x faster than the original function during testing
+--- @param matrix SWMatrix the matrix to get the position from
+--- @return number x the x position of the matrix
+--- @return number y the y position of the matrix
+--- @return number z the z position of the matrix
+function matrix.positionFast(matrix)
+	return matrix[13], matrix[14], matrix[15]
 end
 
 ---Credit to toastery

@@ -157,8 +157,12 @@ profiling = false
 function debugging.startProfile(name)
     if profiling == false then return end
     ---@class stackData
-    local stackData = {name = name, otherTime = 0, startTime = s.getTimeMillisec()}
+    local stackData = {name = name, otherTime = 0, startTime = server.getTimeMillisec()}
     table.insert(profileStack, stackData)
+
+    if profileData[name] == nil then
+        profileData[name] = {self=0, total=0, children={}}
+    end
 end
 
 function debugging.endProfile(name)
@@ -166,16 +170,25 @@ function debugging.endProfile(name)
 
     for i, stackData in pairs(profileStack) do
         if stackData.name == name then
-            local endTime = s.getTimeMillisec()
+            local endTime = server.getTimeMillisec()
             local totalTime = (endTime-stackData.startTime)
             local selfTime = totalTime - stackData.otherTime
 
-            if profileData[name] == nil then
-                profileData[name] = {self=0, total=0}
-            end
+            --Add time data to the current functions data
             profileData[name].self = profileData[name].self + selfTime;
             profileData[name].total = profileData[name].total + totalTime;
+            
+            --Add ourself to the children table of the function above us
+            if i > 1 then
+                local parentName = profileStack[i-1].name
+                if profileData[parentName].children[name] == nil then
+                    profileData[parentName].children[name] = totalTime
+                else
+                    profileData[parentName].children[name] = profileData[parentName].children[name] + totalTime
+                end
+            end
 
+            --Add our time to the otherTime in all the parent functions above this call
             for _, otherData in pairs(profileStack) do
                 otherData.otherTime = otherData.otherTime + (totalTime - stackData.otherTime)
             end
@@ -189,12 +202,23 @@ function debugging.printProfile()
     local sortedProfileData = {}
     --Sort the profile data so the highest self time is first
     for name, timeData in pairs(profileData) do
-        table.insert(sortedProfileData, {name = name, self = timeData.self, total = timeData.total})
+        table.insert(sortedProfileData, {name = name, self = timeData.self, total = timeData.total, children=timeData.children})
     end
     table.sort(sortedProfileData, function(a, b) return a.self > b.self end)
-    local myString = "Profile Data:"
+    local myString = "Profile Data: Self | Total"
+    --Display the timing data
     for name, timeData in ipairs(sortedProfileData) do
         myString = myString.."\n"..timeData.name..": "..tostring(timeData.self).."ms | "..tostring(timeData.total).."ms"
+    end
+    --Display the time data for the children of each function
+    myString = myString.."\n\nFunction children data: "
+    for name, timeData in ipairs(sortedProfileData) do
+        if timeData.children ~= nil and util.getTableLength(timeData.children) > 0 then
+            myString = myString.."\n"..timeData.name
+            for childName, childTime in pairs(timeData.children) do
+                myString = myString.."\n  |-> "..childName..": "..tostring(childTime).."ms"
+            end
+        end
     end
     debugging.printDebug(myString)
 end
@@ -208,6 +232,37 @@ end
 function debugging.checkOpenStacks()
     for i in pairs(profileStack) do
         d.printWarning("Open stack: ",profileStack[i].name)
+    end
+end
+
+if profiling then
+    function hookFunc(func, name)
+        debug.log("FLAK | Hooking function "..name)
+        local originalFunction = func
+        return function(...)
+            debugging.startProfile(name)
+            local results = {originalFunction(...)}
+            debugging.endProfile(name)
+            return table.unpack(results)
+        end
+    end
+    --Hook all the functions in matrix
+    for key, value in pairs(matrix) do
+        if type(value) == "function" then
+            matrix[key] = hookFunc(value, "matrix."..key)
+        end
+    end
+    --Hook all the functions in math
+    for key, value in pairs(math) do
+        if type(value) == "function" then
+            math[key] = hookFunc(value, "math."..key)
+        end
+    end
+    --Hook some of the functions in server
+    for key, value in pairs(server) do
+        if type(value) == "function" and key ~= "getTimeMillisec" and key ~= "announce" then
+            server[key] = hookFunc(value, "server."..key)
+        end
     end
 end
 

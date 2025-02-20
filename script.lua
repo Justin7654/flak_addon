@@ -392,15 +392,18 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		shrapnel.debugVoxelPositions(tostring(args[1]))
 	elseif command == "bench" then
 		local vehicle_id = tonumber(args[1])
-		local runTimes = 50000
+		local runTimes = 100*1000
+		local testMatrix = s.getVehiclePos(vehicle_id)
 		local start1 = s.getTimeMillisec()
 		for i=1, runTimes do
-			
+			local combinedX,combinedY,combinedZ = 3.2, 7.3, 9.1
+			combinedX, combinedY, combinedZ = math.floor(combinedX*4), math.floor(combinedY*4), math.floor(combinedZ*4)
 		end
 		local end1 = s.getTimeMillisec()
 		local start2 = s.getTimeMillisec()
 		for i=1, runTimes do
-			
+			local combinedX,combinedY,combinedZ = 3.2, 7.3, 9.1
+			combinedX, combinedY, combinedZ = (combinedX * 4) // 1, (combinedY * 4) // 1, (combinedZ * 4) // 1
 		end
 		local end2 = s.getTimeMillisec()
 		local time1 = (end1 - start1)/runTimes
@@ -416,7 +419,6 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		local beforeState = g_savedata.debug.chat
 		g_savedata.debug.chat = true
 		d.printProfile()
-		d.printTraceJSON()
 		g_savedata.debug.chat = beforeState
 	elseif command == "clearprofile" then
 		local beforeState = g_savedata.debug.chat
