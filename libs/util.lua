@@ -201,5 +201,21 @@ function util.tableToString(t)
 	return tableToString(t)
 end
 
+--- Takes in a table which contains named keys and then sorts the table using the provided sorting function
+--- Adds a additional key to each value named "name" which contains the original key it was stored under
+--- @param inputTable table the table to sort
+--- @param compareFunc function the function to use to compare the values
+--- @return table<number, any> the sorted table
+function util.sortNamedTable(inputTable, compareFunc)
+	local sortedTable = {}
+	
+	for k, v in pairs(inputTable) do
+		newTable = util.shallowCopy(v)
+		newTable.name = k
+		table.insert(sortedTable, newTable)
+	end
+	table.sort(sortedTable, compareFunc)
+	return sortedTable
+end
 
 return util

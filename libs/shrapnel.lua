@@ -12,6 +12,7 @@ function shrapnel.tickAll()
     d.startProfile("tickAllShrapnel")
 
     -- Decide the vehicles the each shrapnel will check, to minimize the checks needed to be done by each individual shrapnel
+    d.startProfile("tickAll:decideVehicles")
     local vehicleOwners = g_savedata.vehicleOwners
     local baseVoxels = g_savedata.vehicleBaseVoxel
     local vehiclesToCheck = {}
@@ -28,8 +29,8 @@ function shrapnel.tickAll()
                 local vehicleMatrix, posSuccess = s.getVehiclePos(vehicle_id)
                 if posSuccess then
                     --Check that its higher than the base altitude to exclude vehicles that cant be targetted by flak
-                    local x,y,z = matrix.position(vehicleMatrix)
-                    --local x,y,z = 0,50000,0 --For testing
+                    --local x,y,z = matrix.position(vehicleMatrix)
+                    local x,y,z = 0,50000,0 --For testing
                     if y > g_savedata.settings.minAlt then
                         d.startProfile("calculateVehicleVoxelZeroPosition")
                         local zeroPosSuccess,vehicleZeroPosition = shrapnel.calculateVehicleVoxelZeroPosition(vehicle_id)
@@ -46,6 +47,7 @@ function shrapnel.tickAll()
             end
         end
     end
+    d.endProfile("tickAll:decideVehicles")
 
     -- Go through all the shrapnel chunks and tick them
     for _, chunk in pairs(g_savedata.shrapnelChunks) do
@@ -65,6 +67,7 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
     d.startProfile("tickShrapnelChunk")
 
     --Pre-decide which vehicles are close enough since they generally wont change inbetween steps, and it wont matter much if it does change
+    d.startProfile("decideVehicles")
     local finalVehicles = {}
     local futureX = chunk.positionX + chunk.fullVelocityX
     local futureY = chunk.positionY + chunk.fullVelocityY
@@ -77,10 +80,12 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
             table.insert(finalVehicles, vehicle_id)
         end
     end
+    d.endProfile("decideVehicles")
 
     --Start stepping the position and checking if its hit anything
     local hit = false
     local checks = 0
+    d.startProfile("Substeps")
     for step=1, g_savedata.settings.shrapnelSubSteps do
         -- Update position
         chunk.positionX = chunk.positionX + chunk.velocityX
@@ -105,6 +110,7 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
             break
         end
     end
+    d.endProfile("Substeps")
     
     --Shrapnel debug
     if g_savedata.debug.shrapnel then

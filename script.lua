@@ -63,6 +63,8 @@ g_savedata = {
 	shrapnelCurrentID = 0,
 }
 
+g_savedata.tickCounter = 0
+
 --- @alias callbackID "freeDebugLabel" | "flakExplosion" | "tickShrapnelChunk" | "debugVoxelPositions"
 registeredTaskCallbacks = {
 	freeDebugLabel = d.freeDebugLabel,
@@ -85,6 +87,7 @@ matrix.emptyMatrix = matrix.translation(0,0,0)
 
 ---@param game_ticks number the number of ticks since the last onTick call (normally 1, while sleeping 400.)
 function onTick(game_ticks)
+	--s.announce("[]", g_savedata.tickCounter)
     g_savedata.tickCounter = g_savedata.tickCounter + 1
 
 	--Loop through all flak once every 10 seconds and if they are targetting a player higher than 150m then
@@ -277,7 +280,7 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 			debugType = string.lower(args[1])
 			success = d.toggleDebug(debugType)
 			if not success then
-				s.announce("[Flak Commands]", "Debug mode not found; available modes:\nchat\nwarning\nerror\nlead\ntask")
+				s.announce("[Flak Commands]", "Debug mode not found; current configuration:\n"..util.tableToString(g_savedata.debug))
 			end
 		end
 	elseif command == "clear" or command == "reset" then
@@ -403,14 +406,12 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		local testMatrix = s.getVehiclePos(vehicle_id)
 		local start1 = s.getTimeMillisec()
 		for i=1, runTimes do
-			local combinedX,combinedY,combinedZ = 3.2, 7.3, 9.1
-			combinedX, combinedY, combinedZ = math.floor(combinedX*4), math.floor(combinedY*4), math.floor(combinedZ*4)
+			d.startProfile()
 		end
 		local end1 = s.getTimeMillisec()
 		local start2 = s.getTimeMillisec()
 		for i=1, runTimes do
-			local combinedX,combinedY,combinedZ = 3.2, 7.3, 9.1
-			combinedX, combinedY, combinedZ = (combinedX * 4) // 1, (combinedY * 4) // 1, (combinedZ * 4) // 1
+			d.endProfile()
 		end
 		local end2 = s.getTimeMillisec()
 		local time1 = (end1 - start1)/runTimes
@@ -419,9 +420,6 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		s.announce("[Flak Commands]", "Raw time 1: "..(end1-start1).."ms\nRaw time 2: "..(end2-start2).."ms")
 		--Print averaged
 		s.announce("[Flak Commands]", "Time 1: "..time1.."ms\nTime 2: "..time2.."ms")
-	elseif command == "test" then
-		local vehicle_id = tonumber(args[1])
-		d.printDebug(util.tableToString(g_savedata.debug))
 	elseif command == "printprofile" then
 		local beforeState = g_savedata.debug.chat
 		g_savedata.debug.chat = true

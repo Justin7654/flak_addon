@@ -156,71 +156,91 @@ profileData = {}
 profiling = false
 function debugging.startProfile(name)
     if profiling == false then return end
+
     ---@class stackData
     local stackData = {name = name, otherTime = 0, startTime = server.getTimeMillisec()}
     table.insert(profileStack, stackData)
-
-    if profileData[name] == nil then
-        profileData[name] = {self=0, total=0, children={}}
-    end
 end
 
 function debugging.endProfile(name)
     if profiling == false then return end
 
+    local endTime = server.getTimeMillisec()
+    local treeLocation = profileData
+
     for i, stackData in pairs(profileStack) do
         if stackData.name == name then
-            local endTime = server.getTimeMillisec()
             local totalTime = (endTime-stackData.startTime)
             local selfTime = totalTime - stackData.otherTime
 
             --Add time data to the current functions data
-            profileData[name].self = profileData[name].self + selfTime;
-            profileData[name].total = profileData[name].total + totalTime;
-            
-            --Add ourself to the children table of the function above us
-            if i > 1 then
-                local parentName = profileStack[i-1].name
-                if profileData[parentName].children[name] == nil then
-                    profileData[parentName].children[name] = totalTime
-                else
-                    profileData[parentName].children[name] = profileData[parentName].children[name] + totalTime
-                end
+            if treeLocation[name] == nil then
+                treeLocation[name] = {self=0, total=0, children={}}
             end
-
-            --Add our time to the otherTime in all the parent functions above this call
-            for _, otherData in pairs(profileStack) do
-                otherData.otherTime = otherData.otherTime + (totalTime - stackData.otherTime)
-            end
+            treeLocation[name].self = treeLocation[name].self + selfTime;
+            treeLocation[name].total = treeLocation[name].total + totalTime;
 
             table.remove(profileStack, i)
+            return
+        else
+            if treeLocation[stackData.name] == nil then
+                treeLocation[stackData.name] = {self=0, total=0, children={}}
+            end
+            treeLocation = treeLocation[stackData.name].children
         end
     end
 end
 
 function debugging.printProfile()
-    local sortedProfileData = {}
-    --Sort the profile data so the highest self time is first
-    for name, timeData in pairs(profileData) do
-        table.insert(sortedProfileData, {name = name, self = timeData.self, total = timeData.total, children=timeData.children})
+    --Make a version of the data that has the total time each function took
+    local aggergatedProfileData = {}
+    function processAggregate(children)
+        for name,v in pairs(children) do
+            if aggergatedProfileData[name] == nil then
+                aggergatedProfileData[name] = {self=0, total=0}
+            end
+            aggergatedProfileData[name].self = aggergatedProfileData[name].self + v.self
+            aggergatedProfileData[name].total = aggergatedProfileData[name].total + v.total
+            processAggregate(v.children)
+        end
     end
-    table.sort(sortedProfileData, function(a, b) return a.self > b.self end)
-    local myString = "Profile Data: Self | Total"
-    --Display the timing data
-    for name, timeData in ipairs(sortedProfileData) do
-        myString = myString.."\n"..timeData.name..": "..tostring(timeData.self).."ms | "..tostring(timeData.total).."ms"
+    processAggregate(profileData)
+    aggergatedProfileData = util.sortNamedTable(aggergatedProfileData, function(a, b) return a.self > b.self end)
+
+    --Display the aggergated data
+    local outputString = "Aggergated Data:"
+    for _, timeData in ipairs(aggergatedProfileData) do
+        if timeData.self > 0 then
+            outputString = outputString.."\n"..tostring(timeData.name)..": "..tostring(timeData.self).."ms"
+        end
     end
-    --Display the time data for the children of each function
-    myString = myString.."\n\nFunction children data: "
-    for name, timeData in ipairs(sortedProfileData) do
-        if timeData.children ~= nil and util.getTableLength(timeData.children) > 0 then
-            myString = myString.."\n"..timeData.name
-            for childName, childTime in pairs(timeData.children) do
-                myString = myString.."\n  |-> "..childName..": "..tostring(childTime).."ms"
+    
+    --Display a tree visualization of the data
+    local function printTree(tree, indent)
+        local sortedTree = util.sortNamedTable(tree, function(a, b) return a.total > b.total end)
+
+        for i, timeData in pairs(sortedTree) do
+            lineCharacter = "|"
+            if #sortedTree == i then
+                lineCharacter = "\\"
+            end
+            if timeData.total > 0 then
+                timeData.total = timeData.total
+                outputString = outputString.."\n"..string.rep("   ", indent).."|->"..timeData.name..": "..tostring(timeData.total).."ms"
+                printTree(timeData.children, indent+1)
             end
         end
     end
-    debugging.printDebug(myString)
+    outputString = outputString.."\n \nTree data:"
+    printTree(profileData, 0)
+    
+    --Print the data to chat
+    server.announce("[Profile]", outputString)
+
+    --Print the data to the console (it doesn't support new lines)
+    for line in string.gmatch(outputString, "[^\r\n]+") do
+        debug.log("FLAK PROFILE        "..line)
+    end
 end
 
 function debugging.clearProfile()

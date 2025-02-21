@@ -89,6 +89,15 @@ function flakMain.verifyFlakList()
         end
     end
 
+    --Verify some debug modes
+    local ALL_DEBUG_MODES = {"debug","warning","error","lead","shrapnel","task", "bbox"}
+    for v in ipairs(ALL_DEBUG_MODES) do
+        if g_savedata.debug[v] == nil then
+            s.announce("[Flak Sanity Check]", v.." debug setting corrupted. Defaulting to false")
+            g_savedata.debug[v] = false
+        end 
+    end
+
     --Show Results
     if fixed > 0 then
         s.announce("[Flak Sanity Check]", "Sanity check complete. "..tostring(fixed).." issues fixed")
