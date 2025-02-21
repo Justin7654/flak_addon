@@ -6,10 +6,44 @@
 --- May not be 100% accurate, uses component data to approximate a bounding box.
 ---]]]
 
-local bboxManager = {}
+local collisionDetection = {}
 local d = require("libs.debugging")
 
-function bboxManager.generateBBOX(vehicle_id)
+--- Generates the extreme components of the vehicle, which are the components on the outmost part of the vehicle
+--- @param vehicle_id number
+function collisionDetection.calculateExtremes(vehicle_id)
+    --Get the farthest point from the center of the vehicle
+    --Size in all directions is that distance*2
+end
+
+--- Generates a AABB of the vehicle based on it facing forward in the workbench.
+--- This can then be transformed later based on the vehicles transform matrix to get a rotated version
+function collisionDetection.generateBaseAABB(vehicle_id)
+
+end
+
+--- Generates a rotated AABB based on the vehicles transform matrix and a base AABB.
+--- Output is the AABB min point and max point in local space
+function collisionDetection.calculateAABB(baseAABB, transformMatrix)
+
+end
+
+--- Checks if a given point is inside a given AABB
+--- @return boolean isInside
+function collisionDetection.isPointInsideAABB(point, box)
+
+end
+
+function collisionDetection.getBaseAABB(vehicle_id)
+
+end
+
+function collisionDetection.getAABB(vehicle_id)
+
+end
+
+--[[
+function collisionDetection.generateBBOX(vehicle_id)
     local front = -1000
     local back = 1000
     local left = 1000
@@ -99,9 +133,5 @@ function bboxManager.generateBBOX(vehicle_id)
         d.debugLabel("bbox", m.translation(x, y, z+back), "back", 15*time.second)
     end
 end
-
-function bboxManager.isInsideBBOX(vehicle_id, position)
-
-end
-
-return bboxManager
+]]
+return collisionDetection

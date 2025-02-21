@@ -272,7 +272,7 @@ function shrapnel.calculateVehicleVoxelZeroPosition(vehicle_id)
     end
     if SUPER_DEBUG then d.debugLabel("shrapnel", vehiclePos, "Detected 0,0,0 ("..vehicle_id..")", time.second) end
     
-    vehiclePos = matrix.invert(vehiclePos) --Invert here instead of in getVehicleVoxelAtWorldPosition since this doesn't change between shrapnel
+    vehiclePos = matrix.invert(vehiclePos)
 
     return true, vehiclePos
 end

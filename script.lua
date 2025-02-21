@@ -12,7 +12,7 @@ flakMain = require("libs.flakMain")
 taskService = require("libs.taskService")
 aiming = require("libs.ai.aiming")
 shrapnel = require("libs.shrapnel")
-bboxManager = require("libs.bboxManager")
+collisionDetection = require("libs.collisionDetection")
 
 -- Data
 g_savedata = {
@@ -216,7 +216,7 @@ function onVehicleLoad(vehicle_id)
 		end
 	end
 	if g_savedata.vehicleBBOXs and g_savedata.vehicleBBOXs[vehicle_id] == nil then
-		bboxManager.generateBBOX(vehicle_id)
+		
 	end
 	
 	d.printDebug("End callback")
