@@ -13,18 +13,18 @@ function shrapnel.tickAll()
 
     -- Decide the vehicles the each shrapnel will check, to minimize the checks needed to be done by each individual shrapnel
     d.startProfile("tickAll:decideVehicles")
-    local vehicleOwners = g_savedata.vehicleOwners
-    local baseVoxels = g_savedata.vehicleBaseVoxel
+    local vehicleInfoTable = g_savedata.vehicleInfo
     local vehiclesToCheck = {}
     local vehiclePositions = {}
     local vehicleZeroPositions = {}
     for _,vehicle_id in ipairs(g_savedata.loadedVehicles) do
         --Check if the vehicle is owned by a player so we dont waste time checking AI vehicles or static vehicles
-        local owner = vehicleOwners[vehicle_id]
+        local vehicleInfo = vehicleInfoTable[vehicle_id]
+        local owner = vehicleInfo.owner
         local allowMissionVehicles = false
         if owner and owner >= 0 or allowMissionVehicles then
             --Check if it has a baseVoxel, otherwise it cant be checked
-            if baseVoxels[vehicle_id] ~= nil then
+            if vehicleInfo.base_voxel ~= nil then
                 --Should be valid, just make sure that you can get its data fine
                 local vehicleMatrix, posSuccess = s.getVehiclePos(vehicle_id)
                 if posSuccess then
@@ -252,7 +252,7 @@ function shrapnel.calculateVehicleVoxelZeroPosition(vehicle_id)
     local SUPER_DEBUG = false
 
     --Get the base voxel to use for getting the vehicle position
-    local baseVoxel = g_savedata.vehicleBaseVoxel[vehicle_id]
+    local baseVoxel = g_savedata.vehicleInfo[vehicle_id].base_voxel
     if baseVoxel == nil then
         return false, matrix.translation(0,0,0)
     end

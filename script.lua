@@ -38,11 +38,7 @@ g_savedata = {
 	spawnedFlak = {}, ---@type FlakData[]
 	loadedVehicles = {}, ---@type number[]
 	vehicleOwners = {},
-	vehicleToMainVehicle = {}, ---@type table<number, number> Use to get the main_vehicle_id of a group from a vehicle id
-	vehicleInitialOffsets = {}, ---@type table<number, SWMatrix> The initial offset this vehicle had from the main vehicle when it spawned
-	vehicleBBOXs = {}, ---@type table<number, BBOX> The bounding box of the vehicle
-	vehicleComponents = {}, ---@type table<number, SWVehicleComponents> The components of the vehicle
-	vehicleBaseVoxel = {}, ---@type table<number, SWVoxelPos> The base voxel of the vehicle, normally 0,0,0. but if 0,0,0 doesn't exist then the closest component
+	vehicleInfo = {}, ---@type table<number, vehicleInfo>
 	debug = {
 		chat = false,
 		warning = true,
@@ -84,6 +80,30 @@ s = server
 m = matrix
 
 matrix.emptyMatrix = matrix.translation(0,0,0)
+
+---@class vehicleInfo
+---@field needs_setup boolean whether the vehicle needs to be setup. If this is true, some data will be nil
+---@field group_id number the group which this vehicle belongs to
+---@field main_vehicle_id number the main vehicle of this group
+---@field owner number the peer_id of the player who spawned the vehicle, or -1 if the server spawned it
+---@field components SWVehicleComponents?
+---@field vehicle_data SWVehicleData?
+---@field base_voxel SWVoxelPos?
+---@field collider_data any?
+---@field mass number?
+---@field voxels number?
+
+---@class completeVehicleInfo : vehicleInfo
+---@field needs_setup boolean whether the vehicle needs to be setup. If this is true, some data will be nil
+---@field group_id number the group which this vehicle belongs to
+---@field main_vehicle_id number the main vehicle of this group
+---@field owner number the peer_id of the player who spawned the vehicle, or -1 if the server spawned it
+---@field components SWVehicleComponents
+---@field vehicle_data SWVehicleData
+---@field base_voxel SWVoxelPos?
+---@field collider_data any
+---@field mass number
+---@field voxels number
 
 ---@param game_ticks number the number of ticks since the last onTick call (normally 1, while sleeping 400.)
 function onTick(game_ticks)
@@ -163,32 +183,23 @@ function onVehicleLoad(vehicle_id)
 		d.printDebug("Set flak ",flakData.vehicle_id," to simulating")
 	end
 
-	if g_savedata.vehicleInitialOffsets[vehicle_id] == nil then
-		--Calculate offset from main vehicle so it can be put into 
-		local vehicleMatrix = s.getVehiclePos(vehicle_id)
-		local mainVehicleMatrix = s.getVehiclePos(g_savedata.vehicleToMainVehicle[vehicle_id])
-			
-		local offset = matrix.multiply(matrix.invert(mainVehicleMatrix), vehicleMatrix)
+	--Setup the vehicle if its not already
+	if g_savedata.vehicleInfo[vehicle_id].needs_setup then
+		local vehicleInfo = g_savedata.vehicleInfo[vehicle_id]
+		local loadedVehicleData = s.getVehicleComponents(vehicle_id)
+		vehicleInfo.vehicle_data = s.getVehicleData(vehicle_id)
+		vehicleInfo.components = loadedVehicleData.components
+		vehicleInfo.mass = loadedVehicleData.mass
+		vehicleInfo.voxels = loadedVehicleData.voxels
+		vehicleInfo.needs_setup = false
 
-		--d.debugLabel("chat", mainVehicleMatrix, "Main", 8*time.second)
-		--d.debugLabel("chat", vehicleMatrix, "Vehicle", 5*time.second)
-		--d.printDebug("Calculated offset for vehicle ",vehicle_id," to be ",math.floor(x),",",math.floor(y),",",math.floor(z))
-		g_savedata.vehicleInitialOffsets[vehicle_id] = offset
-	end
-	if g_savedata.vehicleComponents[vehicle_id] == nil then
-		g_savedata.vehicleComponents[vehicle_id] = s.getVehicleComponents(vehicle_id).components
-	end
-	if g_savedata.vehicleBaseVoxel[vehicle_id] == nil then
+		--Setup base voxel data
 		if shrapnel.checkVoxelExists(vehicle_id, 0, 0, 0) then
 			--Safe to use 0,0,0
-			g_savedata.vehicleBaseVoxel[vehicle_id] = {x=0, y=0, z=0}
-		elseif g_savedata.vehicleToMainVehicle[vehicle_id] ~= vehicle_id and false then --Why is this "and false"? safe to remove?
-			--If its not the main vehicle, use the main vehicle's base voxel
-			local mainVehicle = g_savedata.vehicleToMainVehicle[vehicle_id]
-			g_savedata.vehicleBaseVoxel[vehicle_id] = g_savedata.vehicleBaseVoxel[mainVehicle]
+			vehicleInfo.base_voxel = {x=0, y=0, z=0}
 		else
 			--In case that 0,0,0 is not a valid voxel, find the closest component and use that instead
-			local com = g_savedata.vehicleComponents[vehicle_id]
+			local com = loadedVehicleData.components
 			local allComponents = util.combineList(com.batteries, com.buttons, com.dials, com.guns, com.hoppers, com.rope_hooks, com.seats, com.signs, com.tanks)
 			local closest = {dist=math.huge, x=0, y=0, z=0}
 			for _, component in pairs(allComponents) do
@@ -211,14 +222,11 @@ function onVehicleLoad(vehicle_id)
 				d.printDebug("Skipping getting base voxel for vehicle ",vehicle_id," because its likely a bomb")
 			else
 				d.printDebug("Set base voxel for vehicle ",vehicle_id," to ",closest.x,",",closest.y,",",closest.z)
-				g_savedata.vehicleBaseVoxel[vehicle_id] = {x=closest.x, y=closest.y, z=closest.z}
+				vehicleInfo.base_voxel = {x=closest.x, y=closest.y, z=closest.z}
 			end
 		end
 	end
-	if g_savedata.vehicleBBOXs and g_savedata.vehicleBBOXs[vehicle_id] == nil then
-		
-	end
-	
+
 	d.printDebug("End callback")
 end
 
@@ -234,10 +242,13 @@ function onGroupSpawn(group_id, peer_id, x, y, z, group_cost)
 	d.printDebug("Main vehicle matrix: ",p1,",",p2,",",p3)
 
 	for _, vehicle_id in pairs(vehicle_group) do
-		--Set vehicle owners
-		g_savedata.vehicleOwners[vehicle_id] = peer_id
-		--Set vehicleToMainVehicle
-		g_savedata.vehicleToMainVehicle[vehicle_id] = main_vehicle_id
+		--Set vehicle data
+		g_savedata.vehicleInfo[vehicle_id] = {
+			needs_setup = true,
+			group_id = group_id,
+			main_vehicle_id = main_vehicle_id,
+			owner = peer_id,
+		}
 	end
 end
 
@@ -260,11 +271,8 @@ function onVehicleDespawn(vehicle_id)
 	if i ~= -1 then
 		d.printDebug("Removed vehicle ",vehicle_id," from loaded vehicles list")
 	end
-
-	--Remove from player vehicles
-	g_savedata.vehicleOwners[vehicle_id] = nil
-	--Remove from vehicleToMainVehicle
-	g_savedata.vehicleToMainVehicle[vehicle_id] = nil
+	--Delete the vehicle info
+	g_savedata.vehicleInfo[vehicle_id] = nil
 end
 
 function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, command, ...)
@@ -314,10 +322,10 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		g_savedata.settings.flakShellSpeed = tonumber(args[1])
 		s.announce("[Flak Commands]", "Flak shell speed set to "..g_savedata.settings.flakShellSpeed.." m/s by "..s.getPlayerName(user_peer_id))
 	elseif command == "checkowners" then
-		for vehicle_id, owner in pairs(g_savedata.vehicleOwners) do
+		for vehicle_id, info in pairs(g_savedata.vehicleInfo) do
 			if s.getVehicleSimulating(vehicle_id) then
 				local position = s.getVehiclePos(vehicle_id)
-				d.debugLabel("none", position, tostring(owner), 5*time.second)
+				d.debugLabel("none", position, tostring(info.owner), 5*time.second)
 			end
 		end
 	elseif command == "viewtasks" then
@@ -447,4 +455,15 @@ end
 ---@return boolean isTick if its the current tick that you requested
 function isTickID(id, rate)
 	return (g_savedata.tickCounter + id) % rate == 0
+end
+
+---@param info vehicleInfo
+---@return boolean, completeVehicleInfo
+function isVehicleDataSetup(info)
+    if not info.needs_setup then
+		---@diagnostic disable-next-line: return-type-mismatch
+        return true, info
+    end
+	---@diagnostic disable-next-line: return-type-mismatch
+    return false, info
 end
