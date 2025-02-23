@@ -14,6 +14,24 @@ local d = require("libs.debugging")
 function collisionDetection.calculateExtremes(vehicle_id)
     --Get the farthest point from the center of the vehicle
     --Size in all directions is that distance*2
+    local vehicleInfo = g_savedata.vehicleInfo[vehicle_id]
+    local isSetup, vehicleInfo = isVehicleDataSetup(vehicleInfo)
+    if isSetup then
+        local com = vehicleInfo.components
+		local allComponents = util.combineList(com.batteries, com.buttons, com.dials, com.guns, com.hoppers, com.rope_hooks, com.seats, com.signs, com.tanks)
+        for _, component in pairs(allComponents) do
+			local x,y,z = component.pos.x, component.pos.y, component.pos.z
+			local dist = x*x + y*y + z*z
+			if dist < closest.dist then
+				closest.dist = dist
+				closest.x = x
+				closest.y = y
+				closest.z = z
+			end
+		end
+    else
+        d.printError("collisionDetection", SSSWTOOL_SRC_FILE, "-",SSSWTOOL_SRC_LINE,": Attempt to calculate extreme for a vehicle that has not been setup")
+    end
 end
 
 --- Generates a AABB of the vehicle based on it facing forward in the workbench.
@@ -34,10 +52,12 @@ function collisionDetection.isPointInsideAABB(point, box)
 
 end
 
+--- Returns a base AABB previously pre-computed for the vehicle given a vehicle_id
 function collisionDetection.getBaseAABB(vehicle_id)
 
 end
 
+--- Returns the most recent computed AABB for the given vehicle_id
 function collisionDetection.getAABB(vehicle_id)
 
 end
