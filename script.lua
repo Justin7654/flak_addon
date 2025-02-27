@@ -40,7 +40,7 @@ g_savedata = {
 	vehicleOwners = {},
 	vehicleInfo = {}, ---@type table<number, vehicleInfo>
 	debug = {
-		chat = false,
+		chat = true,
 		warning = true,
 		error = true,
 		lead = false,
@@ -61,9 +61,10 @@ g_savedata = {
 
 g_savedata.tickCounter = 0
 
---- @alias callbackID "freeDebugLabel" | "flakExplosion" | "tickShrapnelChunk" | "debugVoxelPositions"
+--- @alias callbackID "freeDebugLabel" | "setPopup" | "flakExplosion" | "tickShrapnelChunk" | "debugVoxelPositions"
 registeredTaskCallbacks = {
 	freeDebugLabel = d.freeDebugLabel,
+	setPopup = server.setPopup,
 	flakExplosion = flakMain.flakExplosion,
 	tickShrapnelChunk = shrapnel.tickShrapnelChunk,
 	debugVoxelPositions = shrapnel.debugVoxelPositions
@@ -89,7 +90,7 @@ matrix.emptyMatrix = matrix.translation(0,0,0)
 ---@field components SWVehicleComponents?
 ---@field vehicle_data SWVehicleData?
 ---@field base_voxel SWVoxelPos?
----@field collider_data any?
+---@field collider_data colliderData?
 ---@field mass number?
 ---@field voxels number?
 
@@ -101,7 +102,7 @@ matrix.emptyMatrix = matrix.translation(0,0,0)
 ---@field components SWVehicleComponents
 ---@field vehicle_data SWVehicleData
 ---@field base_voxel SWVoxelPos?
----@field collider_data any
+---@field collider_data colliderData
 ---@field mass number
 ---@field voxels number
 
@@ -167,6 +168,21 @@ function onTick(game_ticks)
 			end
 		end
 	end
+
+	for i, vehicle_id in pairs(g_savedata.loadedVehicles) do
+		local vehicleInfo = g_savedata.vehicleInfo[vehicle_id]
+		local isSetup, vehicleInfo = isVehicleDataSetup(vehicleInfo)
+		if isSetup and vehicleInfo.collider_data.aabb then
+			--Update collider data
+			local playerPosition = s.getPlayerPos(0)
+			local x,y,z = matrix.position(playerPosition)
+			if collisionDetection.isPointInsideAABB(vehicleInfo.collider_data.aabb, x, y, z) then
+				d.printDebug("Player is inside vehicle ",vehicle_id)
+			else
+				d.printDebug("Player is not inside vehicle ",vehicle_id)
+			end
+		end
+	end
 	
 	taskService:handleTasks()
 	d.tickDebugs()
@@ -183,8 +199,21 @@ function onVehicleLoad(vehicle_id)
 		d.printDebug("Set flak ",flakData.vehicle_id," to simulating")
 	end
 
+	--Backup for if the vehicleInfo value isn't set yet. Because onVehicleSpawn doesn't call for vehicles that are there at world start
+	if g_savedata.vehicleInfo[vehicle_id] == nil then
+		local group_id = s.getVehicleData(vehicle_id).group_id
+		g_savedata.vehicleInfo[vehicle_id] = {
+			needs_setup = true,
+			group_id = group_id,
+			main_vehicle_id = s.getVehicleGroup(group_id)[1],
+			owner = -1,
+		}
+		d.printDebug("Added incomplete vehicle info for ",vehicle_id)
+	end
+
 	--Setup the vehicle if its not already
 	if g_savedata.vehicleInfo[vehicle_id].needs_setup then
+		d.printDebug("Setting up vehicle ",vehicle_id)
 		local vehicleInfo = g_savedata.vehicleInfo[vehicle_id]
 		local loadedVehicleData = s.getVehicleComponents(vehicle_id)
 		vehicleInfo.vehicle_data = s.getVehicleData(vehicle_id)
@@ -192,6 +221,19 @@ function onVehicleLoad(vehicle_id)
 		vehicleInfo.mass = loadedVehicleData.mass
 		vehicleInfo.voxels = loadedVehicleData.voxels
 		vehicleInfo.needs_setup = false
+
+		--Set colliderData
+		vehicleInfo.collider_data = {
+			baseAABB = nil,
+			aabb = nil,
+			last_update = -1,
+			debug = {
+				minLabel = s.getMapID(),
+				maxLabel = s.getMapID(),
+				cleanTask = nil
+			}
+		}
+		collisionDetection.generateBaseAABB(vehicle_id)
 
 		--Setup base voxel data
 		if shrapnel.checkVoxelExists(vehicle_id, 0, 0, 0) then
@@ -230,25 +272,27 @@ function onVehicleLoad(vehicle_id)
 	d.printDebug("End callback")
 end
 
+function onVehicleSpawn(vehicle_id, peer_id, x, y, z, group_cost, group_id)
+	--Set vehicle data
+	d.printDebug("onVehicleSpawn")
+	
+	if g_savedata.vehicleInfo[vehicle_id] == nil then
+		d.printDebug("Added incomplete vehicle info for ",vehicle_id)
+		g_savedata.vehicleInfo[vehicle_id] = {
+			needs_setup = true,
+			group_id = group_id,
+			main_vehicle_id = s.getVehicleGroup(group_id)[1],
+			owner = peer_id,
+		}
+	end
+end
+
 function onGroupSpawn(group_id, peer_id, x, y, z, group_cost)
 	--Add to flak list if its flak
 	local vehicle_group = s.getVehicleGroup(group_id)
 	local main_vehicle_id = vehicle_group[1]
 	if flakMain.isVehicleFlak(main_vehicle_id) then
 		flakMain.addVehicleToSpawnedFlak(main_vehicle_id)		
-	end
-	local mainVehicleMatrix, success = s.getVehiclePos(main_vehicle_id)
-	local p1,p2,p3 = matrix.position(mainVehicleMatrix)
-	d.printDebug("Main vehicle matrix: ",p1,",",p2,",",p3)
-
-	for _, vehicle_id in pairs(vehicle_group) do
-		--Set vehicle data
-		g_savedata.vehicleInfo[vehicle_id] = {
-			needs_setup = true,
-			group_id = group_id,
-			main_vehicle_id = main_vehicle_id,
-			owner = peer_id,
-		}
 	end
 end
 
@@ -328,18 +372,6 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 				d.debugLabel("none", position, tostring(info.owner), 5*time.second)
 			end
 		end
-	elseif command == "viewtasks" then
-		local text = ""
-		local tasks = taskService:GetTasks()
-		for _, task in pairs(tasks) do
-			text = text.."\nTask "..task.id..": \n - Started At: "..tostring(task.startedAt).."\n - Ends At: "..tostring(task.endTime)
-			text = text.."\n - Time elapsed: "..tostring(g_savedata.tickCounter - task.startedAt)
-		end
-		if text == "" then
-			text = "No tasks are currently running"
-		end
-		s.announce("[Flak Commands]", "Tasks: "..text)
-		debug.log(text)
 	elseif command == "viewflak" then
 		s.announce("[Flak Commands]", "Flak Amount: "..#g_savedata.spawnedFlak)
 	elseif command == "loadedvehicles" then
@@ -410,16 +442,16 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		shrapnel.debugVoxelPositions(tostring(args[1]))
 	elseif command == "bench" then
 		local vehicle_id = tonumber(args[1])
-		local runTimes = 100*1000
+		local runTimes = 50*1000
 		local testMatrix = s.getVehiclePos(vehicle_id)
 		local start1 = s.getTimeMillisec()
 		for i=1, runTimes do
-			d.startProfile()
+			s.getVehiclePos(vehicle_id)
 		end
 		local end1 = s.getTimeMillisec()
 		local start2 = s.getTimeMillisec()
 		for i=1, runTimes do
-			d.endProfile()
+			matrix.multiplyXYZW(testMatrix, 1, 5, 2, 1)
 		end
 		local end2 = s.getTimeMillisec()
 		local time1 = (end1 - start1)/runTimes

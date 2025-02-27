@@ -8,9 +8,18 @@
 
 local collisionDetection = {}
 local d = require("libs.debugging")
+local taskService = require("libs.taskService")
 
---- Generates the extreme components of the vehicle, which are the components on the outmost part of the vehicle
+---@class colliderData
+---@field baseAABB baseAABB?
+---@field aabb AABB?
+---@field last_update number
+---@field debug table
+
+--- Generates the extreme components of the vehicle, which are the components on each corner of the vehicle.
+--- 
 --- @param vehicle_id number
+--- @return colliderExtremes?
 function collisionDetection.calculateExtremes(vehicle_id)
     --Get the farthest point from the center of the vehicle
     --Size in all directions is that distance*2
@@ -19,16 +28,56 @@ function collisionDetection.calculateExtremes(vehicle_id)
     if isSetup then
         local com = vehicleInfo.components
 		local allComponents = util.combineList(com.batteries, com.buttons, com.dials, com.guns, com.hoppers, com.rope_hooks, com.seats, com.signs, com.tanks)
-        for _, component in pairs(allComponents) do
-			local x,y,z = component.pos.x, component.pos.y, component.pos.z
-			local dist = x*x + y*y + z*z
-			if dist < closest.dist then
-				closest.dist = dist
-				closest.x = x
-				closest.y = y
-				closest.z = z
-			end
-		end
+        
+        if #allComponents == 0 then
+            return
+        end
+
+        ---@class colliderExtremes
+        local extremes = {
+            left = {x = math.huge, y = 0, z = 0},
+            right = {x = -math.huge, y = 0, z = 0},
+            top = {x = 0, y = -math.huge, z = 0},
+            bottom = {x = 0, y = math.huge, z = 0},
+            front = {x = 0, y = 0, z = -math.huge},
+            back = {x = 0, y = 0, z = math.huge}
+        }
+
+        for _, component in ipairs(allComponents) do
+            local pos = component.pos
+            if pos.x < extremes.left.x then
+                extremes.left = pos
+            end
+            if pos.x > extremes.right.x then
+                extremes.right = pos
+            end
+            if pos.y > extremes.top.y then
+                extremes.top = pos
+            end
+            if pos.y < extremes.bottom.y then
+                extremes.bottom = pos
+            end
+            if pos.z > extremes.front.z then
+                extremes.front = pos
+            end
+            if pos.z < extremes.back.z then
+                extremes.back = pos
+            end
+        end
+
+        --Remove duplicates
+        for k, v in pairs(extremes) do
+            for k2, v2 in pairs(extremes) do
+                if k ~= k2 and v.x == v2.x and v.y == v2.y and v.z == v2.z then
+                    --extremes[k] = nil
+                    break
+                end
+            end
+        end
+
+        output = {extremes.left, extremes.right, extremes.top, extremes.bottom, extremes.front, extremes.back}
+
+        return output
     else
         d.printError("collisionDetection", SSSWTOOL_SRC_FILE, "-",SSSWTOOL_SRC_LINE,": Attempt to calculate extreme for a vehicle that has not been setup")
     end
@@ -36,20 +85,145 @@ end
 
 --- Generates a AABB of the vehicle based on it facing forward in the workbench.
 --- This can then be transformed later based on the vehicles transform matrix to get a rotated version
+--- @param vehicle_id number
+--- @return baseAABB?
 function collisionDetection.generateBaseAABB(vehicle_id)
+    local vehicleInfo = g_savedata.vehicleInfo[vehicle_id]
+    local isSetup, vehicleInfo = isVehicleDataSetup(vehicleInfo)
+    if isSetup then
+        local corners = collisionDetection.calculateExtremes(vehicle_id)
+        if corners then
+            local max = {-math.huge, -math.huge, -math.huge}
+            local min = {math.huge, math.huge, math.huge}
+            for k,corner in ipairs(corners) do
+                max[1] = math.max(max[1], corner.x)
+                max[2] = math.max(max[2], corner.y)
+                max[3] = math.max(max[3], corner.z)
 
+                min[1] = math.min(min[1], corner.x)
+                min[2] = math.min(min[2], corner.y)
+                min[3] = math.min(min[3], corner.z)
+
+                if g_savedata.debug.bbox then
+                    local vehiclePos = s.getVehiclePos(vehicle_id, 0, 0, 0)
+                    local x,y,z,_ = matrix.multiplyXYZW(vehiclePos, corner.x/4, corner.y/4, corner.z/4, 1)
+                    d.debugLabel("bbox", matrix.translation(x,y,z), "Corner", 15*time.second)
+                end
+            end
+            ---@class baseAABB
+            local baseAABB = {
+                min = min,
+                max = max
+            }
+
+            d.printDebug("Generated base AABB for ",tostring(vehicle_id))
+            vehicleInfo.collider_data.baseAABB = baseAABB
+            return baseAABB
+        else
+            d.printWarning("Failed to generate base AABB because couldn't calculate extremes")
+        end
+    else
+        d.printWarning("Attempted to generate a base AABB for a vehicle that isn't setup!")
+    end
 end
 
 --- Generates a rotated AABB based on the vehicles transform matrix and a base AABB.
 --- Output is the AABB min point and max point in local space
-function collisionDetection.calculateAABB(baseAABB, transformMatrix)
+function collisionDetection.calculateAABB(vehicle_id)
+    local vehicleData = g_savedata.vehicleInfo[vehicle_id]
+    local isSetup, vehicleData = isVehicleDataSetup(vehicleData)
+    if not isSetup then
+        return d.printError("collisionDetection", "Attempted to calculate AABB for a vehicle that isn't setup!")
+    end
+    local baseAABB = vehicleData.collider_data.baseAABB
+    if baseAABB == nil then
+        return d.printError("collisionDetection", "Attempted to calculate AABB for a vehicle that doesn't have a base AABB!")
+    end
+    local transformMatrix = s.getVehiclePos(vehicle_id, 0, 0, 0)
+    
+    --[[local corners = {
+        {baseAABB.min[1], baseAABB.min[2], baseAABB.min[3]},
+        {baseAABB.min[1], baseAABB.min[2], baseAABB.max[3]},
+        {baseAABB.min[1], baseAABB.max[2], baseAABB.min[3]},
+        {baseAABB.min[1], baseAABB.max[2], baseAABB.max[3]},
+        {baseAABB.max[1], baseAABB.min[2], baseAABB.min[3]},
+        {baseAABB.max[1], baseAABB.min[2], baseAABB.max[3]},
+        {baseAABB.max[1], baseAABB.max[2], baseAABB.min[3]},
+        {baseAABB.max[1], baseAABB.max[2], baseAABB.max[3]}
+    }]]
+    local corners = collisionDetection.calculateExtremes(vehicle_id)
+    if corners == nil then
+        return d.printError("collisionDetection", "Failed to calculate corners for vehicle_id: " .. vehicle_id)
+    end
 
+    -- Transform each corner using the transformation matrix
+    local newMin = {math.huge, math.huge, math.huge}
+    local newMax = {-math.huge, -math.huge, -math.huge}
+
+    local step = 1
+    for _, corner in ipairs(corners) do
+        --local x, y, z, _ = matrix.multiplyXYZW(transformMatrix, corner[1], corner[2], corner[3], 1)
+        local position = s.getVehiclePos(vehicle_id, corner.x, corner.y, corner.z)
+        local x, y, z = matrix.position(position)
+
+        if step == 10 then
+            break
+        end
+
+        -- Update the new AABB bounds
+        newMin[1] = math.min(newMin[1], x)
+        newMin[2] = math.min(newMin[2], y)
+        newMin[3] = math.min(newMin[3], z)
+
+        newMax[1] = math.max(newMax[1], x)
+        newMax[2] = math.max(newMax[2], y)
+        newMax[3] = math.max(newMax[3], z)
+
+        --d.printDebug("Corner ".._.." is at ",math.floor(x),",",math.floor(y),",",math.floor(z))
+        --d.printDebug("Step ",step,". X: ",math.floor(newMin[1]),", Y: ",math.floor(newMin[2]),", Z: ",math.floor(newMin[3]))
+
+        step = step + 1
+    end
+
+    if g_savedata.debug.bbox then
+        local debugData = vehicleData.collider_data.debug
+        local playerPos = s.getPlayerPos(0)
+        local playerX, playerY, playerZ = matrix.position(playerPos)
+        s.setPopup(-1, debugData.minLabel, "", true, "min", newMin[1], newMin[2], newMin[3], 35)
+        s.setPopup(-1, debugData.maxLabel, "", true, "max", newMax[1], newMax[2], newMax[3], 35)
+        if debugData.cleanTask1 and g_savedata.tasks[debugData.cleanTask1.id] ~= nil then
+            debugData.cleanTask1.endTime = g_savedata.tickCounter + 1
+            debugData.cleanTask2.endTime = g_savedata.tickCounter + 1
+        else
+            debugData.cleanTask1 = taskService:AddTask("setPopup", 1, {-1, debugData.minLabel, "", false, "", 0, 0, 0, 0})
+            debugData.cleanTask2 = taskService:AddTask("setPopup", 1, {-1, debugData.maxLabel, "", false, "", 0, 0, 0 ,0})
+        end
+    end
+
+    ---@class AABB
+    rotatedAABB = {
+        min = newMin,
+        max = newMax
+    }
+    vehicleData.collider_data.aabb = rotatedAABB
+    vehicleData.collider_data.last_update = g_savedata.tickCounter
+    return rotatedAABB
+end
+
+function collisionDetection.getAABBForVehicle(vehicle_id)
+    local vehicleData = g_savedata.vehicleInfo[vehicle_id]
+    local isSetup, vehicleData = isVehicleDataSetup(vehicleData)
+    if isSetup and vehicleData.collider_data then
+        
+    end
 end
 
 --- Checks if a given point is inside a given AABB
 --- @return boolean isInside
-function collisionDetection.isPointInsideAABB(point, box)
-
+function collisionDetection.isPointInsideAABB(aabb, x, y, z)
+    return (x >= aabb.min[1] and x <= aabb.max[1]) and
+           (y >= aabb.min[2] and y <= aabb.max[2]) and
+           (z >= aabb.min[3] and z <= aabb.max[3])
 end
 
 --- Returns a base AABB previously pre-computed for the vehicle given a vehicle_id

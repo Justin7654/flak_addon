@@ -52,6 +52,7 @@ function debugging.debugLabel(debugMode, position, text, length, renderDistance)
     local x,y,z = matrix.position(position)
     server.setPopup(-1, ui_id, "", true, text, x,y,z, renderDistance)
     taskService:AddTask("freeDebugLabel", length, {-1, ui_id})
+    return ui_id
 end
 
 function debugging.freeDebugLabel(peer_id, ui_id)
@@ -103,12 +104,29 @@ function debugging.cleanVoxelMap(id)
     end
 end
 
+function debugging._argsToString(...)
+    local args = {...}
+    local str = ""
+    for i, arg in ipairs(args) do
+        if type(arg) == "table" then
+            if util.getTableLength(arg) > 50 then
+                str = str.."(table too large)"
+            else
+                str = str..util.tableToString(arg)
+            end
+        else
+            str = str..tostring(arg)
+        end
+    end
+    return str
+end
+
 --Each argument is converted to a string and added together to make the message
 function debugging.printDebug(...)
 	if not g_savedata.debug.chat then
 		return
 	end
-	local msg = table.concat({...}, "")
+	local msg = debugging._argsToString(...)
 	s.announce("[Flak Debug]", msg)
     debug.log("ICM FLAK DEBUG | (d.printDebug) "..msg)
 end
@@ -118,7 +136,7 @@ function debugging.printWarning(...)
     if not g_savedata.debug.warning then
         return
     end
-    local msg = table.concat({...}, "")
+    local msg = debugging._argsToString(...)
     s.announce("[Flak Warning]", msg)
     debug.log("ICM FLAK WARNING | (d.printWarning) "..msg)
 end
@@ -129,11 +147,18 @@ function debugging.printError(errType, ...)
     if not g_savedata.debug.error then
         return
     end
-    local msg = table.concat({...}, "")
+    local msg = debugging._argsToString(...)
     s.announce("[Flak "..errType.." Error]", msg)
     debug.log("ICM FLAK ERROR | (d.printError) "..msg)
 end
 
+--- Pauses the tick until the given time is over. The game will freeze
+function debugging.wait(seconds)
+    local endTime = server.getTimeMillisec() + seconds*1000
+    while server.getTimeMillisec() < endTime do
+        
+    end
+end
 
 --- @param mode string the debug mode to toggle
 --- @return boolean is_success True if the mode was toggled

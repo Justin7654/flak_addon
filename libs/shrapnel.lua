@@ -1,4 +1,5 @@
 taskService = require("libs.taskService")
+collisionDetection = require("libs.collisionDetection")
 d = require("libs.debugging")
 shrapnel = {}
 
@@ -7,7 +8,7 @@ shrapnel = {}
 function shrapnel.tickAll()
     -- Dont do anything if theres no shrapnel
     if util.getTableLength(g_savedata.shrapnelChunks) == 0 then
-        return
+        --return
     end
     d.startProfile("tickAllShrapnel")
 
@@ -20,6 +21,9 @@ function shrapnel.tickAll()
     for _,vehicle_id in ipairs(g_savedata.loadedVehicles) do
         --Check if the vehicle is owned by a player so we dont waste time checking AI vehicles or static vehicles
         local vehicleInfo = vehicleInfoTable[vehicle_id]
+        if vehicleInfo == nil then
+            return
+        end
         local owner = vehicleInfo.owner
         local allowMissionVehicles = false
         if owner and owner >= 0 or allowMissionVehicles then
@@ -31,6 +35,7 @@ function shrapnel.tickAll()
                     --Check that its higher than the base altitude to exclude vehicles that cant be targetted by flak
                     --local x,y,z = matrix.position(vehicleMatrix)
                     local x,y,z = 0,50000,0 --For testing
+                    collisionDetection.calculateAABB(vehicle_id, vehicleMatrix)
                     if y > g_savedata.settings.minAlt then
                         d.startProfile("calculateVehicleVoxelZeroPosition")
                         local zeroPosSuccess,vehicleZeroPosition = shrapnel.calculateVehicleVoxelZeroPosition(vehicle_id)
@@ -40,7 +45,7 @@ function shrapnel.tickAll()
                             local vehicleX, vehicleY, vehicleZ = matrix.positionFast(vehicleMatrix)
                             table.insert(vehiclesToCheck, vehicle_id)
                             vehiclePositions[vehicle_id] = {vehicleX, vehicleY, vehicleZ}
-                            vehicleZeroPositions[vehicle_id] = vehicleZeroPosition
+                            vehicleZeroPositions[vehicle_id] = matrix.invert(vehicleZeroPosition)
                         end
                     end
                 end
@@ -272,8 +277,6 @@ function shrapnel.calculateVehicleVoxelZeroPosition(vehicle_id)
     end
     if SUPER_DEBUG then d.debugLabel("shrapnel", vehiclePos, "Detected 0,0,0 ("..vehicle_id..")", time.second) end
     
-    vehiclePos = matrix.invert(vehiclePos)
-
     return true, vehiclePos
 end
 
