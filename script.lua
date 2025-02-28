@@ -169,6 +169,7 @@ function onTick(game_ticks)
 		end
 	end
 
+	--[[
 	for i, vehicle_id in pairs(g_savedata.loadedVehicles) do
 		local vehicleInfo = g_savedata.vehicleInfo[vehicle_id]
 		local isSetup, vehicleInfo = isVehicleDataSetup(vehicleInfo)
@@ -182,7 +183,7 @@ function onTick(game_ticks)
 				d.printDebug("Player is not inside vehicle ",vehicle_id)
 			end
 		end
-	end
+	end]]
 	
 	taskService:handleTasks()
 	d.tickDebugs()

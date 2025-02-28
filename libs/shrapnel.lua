@@ -35,7 +35,6 @@ function shrapnel.tickAll()
                     --Check that its higher than the base altitude to exclude vehicles that cant be targetted by flak
                     --local x,y,z = matrix.position(vehicleMatrix)
                     local x,y,z = 0,50000,0 --For testing
-                    collisionDetection.calculateAABB(vehicle_id, vehicleMatrix)
                     if y > g_savedata.settings.minAlt then
                         d.startProfile("calculateVehicleVoxelZeroPosition")
                         local zeroPosSuccess,vehicleZeroPosition = shrapnel.calculateVehicleVoxelZeroPosition(vehicle_id)
