@@ -8,7 +8,7 @@ https://youtu.be/H8zPNMqVi2E?si=cixPLgSg4Ez3AXtc
 -- Imports
 util = require("libs.util")
 d = require("libs.debugging")
-flakMain = require("libs.addon.flakMain")
+flakMain = require("libs.flakMain")
 taskService = require("libs.taskService")
 aiming = require("libs.ai.aiming")
 shrapnel = require("libs.shrapnel")
