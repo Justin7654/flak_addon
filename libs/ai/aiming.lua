@@ -3,7 +3,7 @@ Handles ai target leading and collecting position points for the leading
 --]]
 
 aiming = {}
-d = require("libs.debugging")
+d = require("libs.script.debugging")
 
 --- @alias RecentPositionData table<integer, PositionData>
 

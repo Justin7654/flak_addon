@@ -1,7 +1,7 @@
 flakMain = {}
 
-d = require("libs.debugging")
-taskService = require("libs.taskService")
+d = require("libs.script.debugging")
+taskService = require("libs.script.taskService")
 shrapnel = require("libs.shrapnel")
 
 --- @param vehicle_id number
@@ -96,6 +96,16 @@ function flakMain.verifyFlakList()
             s.announce("[Flak Sanity Check]", v.." debug setting corrupted. Defaulting to false")
             g_savedata.debug[v] = false
         end 
+    end
+
+    --Make sure all vehicles in loaded vehicles exist
+    for i, vehicle_id in pairs(g_savedata.loadedVehicles) do
+        _, success = s.getVehicleSimulating(vehicle_id)
+        if not success then
+            s.announce("[Flak Sanity Check]", "Non-existant loaded vehicle entry found: "..vehicle_id)
+            table.remove(g_savedata.loadedVehicles, i)
+            fixed = fixed + 1
+        end
     end
 
     --Show Results

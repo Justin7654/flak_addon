@@ -6,10 +6,10 @@ https://youtu.be/H8zPNMqVi2E?si=cixPLgSg4Ez3AXtc
 --]]
 
 -- Imports
-util = require("libs.util")
-d = require("libs.debugging")
+util = require("libs.script.util")
+d = require("libs.script.debugging")
 flakMain = require("libs.flakMain")
-taskService = require("libs.taskService")
+taskService = require("libs.script.taskService")
 aiming = require("libs.ai.aiming")
 shrapnel = require("libs.shrapnel")
 collisionDetection = require("libs.collisionDetection")

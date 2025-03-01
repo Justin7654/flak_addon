@@ -1,7 +1,7 @@
-taskService = require("libs.taskService")
+taskService = require("libs.script.taskService")
 collisionDetection = require("libs.collisionDetection")
-matrixExtras = require("libs.matrixExtras")
-d = require("libs.debugging")
+matrixExtras = require("libs.script.matrixExtras")
+d = require("libs.script.debugging")
 shrapnel = {}
 
 -- Performance tracking excel sheet:https://1drv.ms/x/c/5e0eec0b38cb0474/EWqWCGP-O2VOr-6FV9Qp3EIBIXUpqVqg8FAa8HjlWxKk2g?e=Z7Dj0n
@@ -29,6 +29,19 @@ function shrapnel.tickAll()
     for _,vehicle_id in ipairs(g_savedata.loadedVehicles) do
         --Check if the vehicle is owned by a player so we dont waste time checking AI vehicles or static vehicles
         local vehicleInfo = vehicleInfoTable[vehicle_id]
+        if vehicleInfo  == nil then
+            d.printDebug("Vehicle info is nil for vehicle ",vehicle_id)
+            --Check if exists
+            local _, success = s.getVehicleSimulating(vehicle_id)
+            if not success then
+                d.printDebug("Above vehicle does not even exist!")
+            elseif g_savedata.debug.shrapnel then
+                --Show the vehicles positions
+                d.debugLabel("shrapnel", s.getVehiclePos(vehicle_id), "Vehicle "..vehicle_id.." has no vehicleInfo", time.second)
+            end
+            --Recover from a error
+            vehicleInfo = {owner = -1}
+        end
         local owner = vehicleInfo.owner
         if (owner and owner >= 0) or (not FILTER_NON_PLAYER_VEHICLES) then
             --Check if it has a baseVoxel, otherwise it cant be checked

@@ -7,8 +7,8 @@
 ---]]]
 
 local collisionDetection = {}
-local d = require("libs.debugging")
-local taskService = require("libs.taskService")
+local d = require("libs.script.debugging")
+local taskService = require("libs.script.taskService")
 
 ---@class colliderData
 ---@field baseAABB baseAABB?
