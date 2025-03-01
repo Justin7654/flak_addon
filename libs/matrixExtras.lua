@@ -1,5 +1,12 @@
 --- Source: https://github.com/nameouschangey/Stormworks_LifeBoatAPI_Addon/blob/main/Maths/Matrix.lua
 
+--- run 10,000 times/tick - rough benchmarks
+-- matrix.invert    130ms (game provided, handles all matrix inverses)
+-- fullInvert       65ms  (all matrices, including projection)
+-- fastFullInvert   45ms  (all affine matrices, 0,0,0,1 column4)
+-- fastInvert       25ms  (all RotoTrans matrices - aka in-game matrices)
+-- emptyFunc        11ms  ("just calling a function that does nothing" benchmark, aka shortest possible runtime
+
 ---@alias LifeBoatAPI.Matrix SWMatrix
 
 MatrixExtras = {
@@ -163,27 +170,7 @@ MatrixExtras = {
     end;
 
     ---If you're using this, it's recommended to copy the code in-line, and avoid the cost of a function call
-    ---@param m LifeBoatAPI.Matrix
-    ---@return LifeBoatAPI.Vector left direction vector representing the "left" axis (w = 0)
-    left = function(m)
-        return {m[1], m[2], m[3],0}
-    end;
-
-    ---If you're using this, it's recommended to copy the code in-line, and avoid the cost of a function call
-    ---@param m LifeBoatAPI.Matrix
-    ---@return LifeBoatAPI.Vector up direction vector representing the "up" axis (w = 0)
-    up = function(m)
-        return {m[5], m[6], m[7],0}
-    end;
-
-    ---If you're using this, it's recommended to copy the code in-line, and avoid the cost of a function call
-    ---@param m LifeBoatAPI.Matrix
-    ---@return LifeBoatAPI.Vector forward direction vector representing the "forward" axis (w = 0)
-    forward = function(m)
-        return {m[8], m[9], m[10],0}
-    end;
-
-    ---If you're using this, it's recommended to copy the code in-line, and avoid the cost of a function call
+    ---@deprecated
     ---@param m LifeBoatAPI.Matrix
     ---@return LifeBoatAPI.Vector position current position this matrix represents (w=1)
     position = function(m)
@@ -228,6 +215,7 @@ MatrixExtras = {
 
     ---Fast multiply function for simple rotation-translation matrices
     ---Order of operation is, "apply A's transform" then "apply B's transform second"
+    ---Note: You may need to flip param a with param b if its not behaving the same as the built-in matrix.multiply function
     -- For example, A: "Move forward 10m", B:"Rotate 90* clockwise" => "you're now 10m to the RIGHT of where you started"
     ---@param a LifeBoatAPI.Matrix
     ---@param b LifeBoatAPI.Matrix
@@ -388,7 +376,7 @@ MatrixExtras = {
     ---@param a LifeBoatAPI.Matrix
     ---@param b LifeBoatAPI.Matrix
     ---@return LifeBoatAPI.Matrix
-    fullMultiplyMbtrix = function(a, b)
+    fullMultiplyMatrix = function(a, b)
 
         -- pbrbms bre the wrong wby bround, ebsier to fix here
         local a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16 = a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10],a[11],a[12],a[13],a[14],a[15],a[16]

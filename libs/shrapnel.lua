@@ -1,14 +1,22 @@
 taskService = require("libs.taskService")
 collisionDetection = require("libs.collisionDetection")
+matrixExtras = require("libs.matrixExtras")
 d = require("libs.debugging")
 shrapnel = {}
+
+-- Performance tracking excel sheet:https://1drv.ms/x/c/5e0eec0b38cb0474/EWqWCGP-O2VOr-6FV9Qp3EIBIXUpqVqg8FAa8HjlWxKk2g?e=Z7Dj0n
+
+local FILTER_GROUND_VEHICLES = true
+local FILTER_NON_PLAYER_VEHICLES = true
+local SKIP_TICK_ALL_IF_NO_SHRAPNEL = true
+local ALWAYS_CHECK_COLLISION_DEBUG = false
 
 --- Ticks all shrapnel objects
 --- Made to replace the system of using task service to loop it, since that is slow, and makes some optimizations impossible or complicated
 function shrapnel.tickAll()
     -- Dont do anything if theres no shrapnel
-    if util.getTableLength(g_savedata.shrapnelChunks) == 0 then
-        --return
+    if util.getTableLength(g_savedata.shrapnelChunks) == 0 and SKIP_TICK_ALL_IF_NO_SHRAPNEL then
+        return
     end
     d.startProfile("tickAllShrapnel")
 
@@ -21,21 +29,16 @@ function shrapnel.tickAll()
     for _,vehicle_id in ipairs(g_savedata.loadedVehicles) do
         --Check if the vehicle is owned by a player so we dont waste time checking AI vehicles or static vehicles
         local vehicleInfo = vehicleInfoTable[vehicle_id]
-        if vehicleInfo == nil then
-            return
-        end
         local owner = vehicleInfo.owner
-        local allowMissionVehicles = false
-        if owner and owner >= 0 or allowMissionVehicles then
+        if (owner and owner >= 0) or (not FILTER_NON_PLAYER_VEHICLES) then
             --Check if it has a baseVoxel, otherwise it cant be checked
             if vehicleInfo.base_voxel ~= nil then
                 --Should be valid, just make sure that you can get its data fine
                 local vehicleMatrix, posSuccess = s.getVehiclePos(vehicle_id)
                 if posSuccess then
                     --Check that its higher than the base altitude to exclude vehicles that cant be targetted by flak
-                    --local x,y,z = matrix.position(vehicleMatrix)
-                    local x,y,z = 0,50000,0 --For testing
-                    if y > g_savedata.settings.minAlt then
+                    local x,y,z = vehicleMatrix[13], vehicleMatrix[14], vehicleMatrix[15]
+                    if y > g_savedata.settings.minAlt or not FILTER_GROUND_VEHICLES then
                         d.startProfile("calculateVehicleVoxelZeroPosition")
                         local zeroPosSuccess,vehicleZeroPosition = shrapnel.calculateVehicleVoxelZeroPosition(vehicle_id)
                         d.endProfile("calculateVehicleVoxelZeroPosition")
@@ -44,7 +47,7 @@ function shrapnel.tickAll()
                             local vehicleX, vehicleY, vehicleZ = matrix.positionFast(vehicleMatrix)
                             table.insert(vehiclesToCheck, vehicle_id)
                             vehiclePositions[vehicle_id] = {vehicleX, vehicleY, vehicleZ}
-                            vehicleZeroPositions[vehicle_id] = matrix.invert(vehicleZeroPosition)
+                            vehicleZeroPositions[vehicle_id] = matrixExtras.invert(vehicleZeroPosition)
                         end
                     end
                 end
@@ -80,7 +83,7 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
         --Check if its more than 25m away from the final position of this tick
         local vehicleMatrix = vehiclePositions[vehicle_id]
         local posX, posY, posZ = vehicleMatrix[1], vehicleMatrix[2], vehicleMatrix[3]
-        if math.abs(futureX - posX) < 30 and math.abs(futureY - posY) < 30 and math.abs(futureZ - posZ) < 30 then
+        if ALWAYS_CHECK_COLLISION_DEBUG or (math.abs(futureX - posX) < 30 and math.abs(futureY - posY) < 30 and math.abs(futureZ - posZ) < 30) then
             table.insert(finalVehicles, vehicle_id)
         end
     end
@@ -223,7 +226,7 @@ function shrapnel.getVehicleVoxelAtWorldPosition(vehicle_id, position, vehicleZe
     ---]]]
 
     --Get the vehicle position at 0,0,0
-    d.startProfile("getVehicleVoxelAtWorldPosition")
+    --d.startProfile("getVehicleVoxelAtWorldPosition")
     local vehiclePos = vehicleZeroPos
     if vehiclePos == nil then
         d.printDebug("Calculating own voxel zero position manually")
@@ -237,13 +240,13 @@ function shrapnel.getVehicleVoxelAtWorldPosition(vehicle_id, position, vehicleZe
     end
     
     --Calculate the voxel positions
-    local finalMatrix = matrix.multiply(vehiclePos, position)--matrix.multiply(matrix.invert(vehiclePos), position)
-    local combinedX, combinedY, combinedZ = matrix.positionFast(finalMatrix)
+    local finalMatrix = matrixExtras.multiplyMatrix(position, vehiclePos)
+    local combinedX, combinedY, combinedZ = finalMatrix[13], finalMatrix[14], finalMatrix[15]--matrix.positionFast(finalMatrix) --finalMatrix[13], finalMatrix[14], finalMatrix[15]
     combinedX, combinedY, combinedZ = (combinedX * 4) // 1, (combinedY * 4) // 1, (combinedZ * 4) // 1 --Each voxel is 0.25m and then floors the result (this is slightly faster than math.floor) 
 
-    --if SUPER_DEBUG then d.debugLabel("shrapnel", position, combinedX..","..combinedY..","..combinedZ, 6*time.second) end
+    --d.debugLabel("shrapnel", position, combinedX..","..combinedY..","..combinedZ, 6*time.second)
 
-    d.endProfile("getVehicleVoxelAtWorldPosition")
+    --d.endProfile("getVehicleVoxelAtWorldPosition")
     return true, combinedX, combinedY, combinedZ
 end
 

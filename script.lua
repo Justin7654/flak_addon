@@ -8,7 +8,7 @@ https://youtu.be/H8zPNMqVi2E?si=cixPLgSg4Ez3AXtc
 -- Imports
 util = require("libs.util")
 d = require("libs.debugging")
-flakMain = require("libs.flakMain")
+flakMain = require("libs.addon.flakMain")
 taskService = require("libs.taskService")
 aiming = require("libs.ai.aiming")
 shrapnel = require("libs.shrapnel")
@@ -40,7 +40,7 @@ g_savedata = {
 	vehicleOwners = {},
 	vehicleInfo = {}, ---@type table<number, vehicleInfo>
 	debug = {
-		chat = true,
+		chat = false,
 		warning = true,
 		error = true,
 		lead = false,
