@@ -6,6 +6,7 @@ https://youtu.be/H8zPNMqVi2E?si=cixPLgSg4Ez3AXtc
 --]]
 
 -- Imports
+sanity = require("libs.script.sanity")
 util = require("libs.script.util")
 d = require("libs.script.debugging")
 flakMain = require("libs.flakMain")
@@ -24,7 +25,7 @@ g_savedata = {
 		fireRate = property.slider("Flak Fire Rate (seconds between shots)", 1, 20, 1, 4),
 		minAlt = property.slider("Minimum Fire Altitude Base", 100, 700, 50, 200),
 		flakAccuracyMult = property.slider("Flak Accuracy Multiplier", 0.5, 1.5, 0.1, 1),
-		shrapnelSubSteps = property.slider("Flak simulation substeps (SIGNIFICANT PERFORAMNCE IMPACT)", 1, 3, 2, 2),
+		shrapnelSubSteps = property.slider("Flak simulation substeps (SIGNIFICANT PERFORAMNCE IMPACT)", 1, 3, 1, 2),
 		shrapnelBombSkipping = property.checkbox("(ADVANCED) Shrapnel optimization 1 (disables collision checks for likely bombs/missiles, very significantly improving performance)", true)
 	},
 	fun = {
@@ -140,11 +141,6 @@ function onTick(game_ticks)
 				end
 
 				--Calculate lead
-				if g_savedata.debug.lead then
-					--local travelTime = flakMain.calculateTravelTime(targetMatrix, sourceMatrix)
-					--local secondLead = aiming.predictPosition(flak.targetPositionData, travelTime)
-					--if secondLead ~= nil then d.debugLabel("lead", secondLead, "Advanced Lead", travelTime) end
-				end
 				local leadMatrix = flakMain.calculateLead(flak)
 				
 				--Fire the flak
@@ -185,6 +181,7 @@ function onTick(game_ticks)
 		end
 	end]]
 	
+	sanity.idleCheck()
 	taskService:handleTasks()
 	d.tickDebugs()
 end
@@ -347,7 +344,7 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 			s.announce("[Flak Commands]", "Available reset commands:\ntracking\ntasks")
 		end
 	elseif command == "sanity" then
-		flakMain.verifyFlakList()
+		sanity.checkAll()
 	elseif command == "event" then
 		if string.lower(args[1]) == "noplayerissafe" then
 			g_savedata.fun.noPlayerIsSafe.active = not g_savedata.fun.noPlayerIsSafe.active

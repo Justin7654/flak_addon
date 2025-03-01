@@ -89,15 +89,6 @@ function flakMain.verifyFlakList()
         end
     end
 
-    --Verify some debug modes
-    local ALL_DEBUG_MODES = {"debug","warning","error","lead","shrapnel","task", "bbox"}
-    for v in ipairs(ALL_DEBUG_MODES) do
-        if g_savedata.debug[v] == nil then
-            s.announce("[Flak Sanity Check]", v.." debug setting corrupted. Defaulting to false")
-            g_savedata.debug[v] = false
-        end 
-    end
-
     --Make sure all vehicles in loaded vehicles exist
     for i, vehicle_id in pairs(g_savedata.loadedVehicles) do
         _, success = s.getVehicleSimulating(vehicle_id)
@@ -338,7 +329,7 @@ function flakMain.flakExplosion(explosionData)
     position = explosionData.position
     d.printDebug("Explosion is at ",s.getTile(position).name," as magnitude ",magnitude)
     s.spawnExplosion(position, magnitude)
-    shrapnel.explosion(position,20)
+    shrapnel.explosion(position,25)
 end
 
 return flakMain
