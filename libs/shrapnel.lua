@@ -10,6 +10,7 @@ local FILTER_GROUND_VEHICLES = true
 local FILTER_NON_PLAYER_VEHICLES = true
 local SKIP_TICK_ALL_IF_NO_SHRAPNEL = true
 local ALWAYS_CHECK_COLLISION_DEBUG = false
+local DONT_DESTROY_ON_HIT_DEBUG = false
 
 --- Ticks all shrapnel objects
 --- Made to replace the system of using task service to loop it, since that is slow, and makes some optimizations impossible or complicated
@@ -120,6 +121,9 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
             --Attempt to damage
             checks = checks + 1
             hit = shrapnel.damageVehicleAtWorldPosition(vehicle_id, hitPosition, vehicleZeroPositions[vehicle_id],5, 0.4)
+            if DONT_DESTROY_ON_HIT_DEBUG then
+                hit = false
+            end
             if hit then
                 break
             end
@@ -254,7 +258,7 @@ function shrapnel.getVehicleVoxelAtWorldPosition(vehicle_id, position, vehicleZe
     
     --Calculate the voxel positions
     local finalMatrix = matrixExtras.multiplyMatrix(position, vehiclePos)
-    local combinedX, combinedY, combinedZ = finalMatrix[13], finalMatrix[14], finalMatrix[15]--matrix.positionFast(finalMatrix) --finalMatrix[13], finalMatrix[14], finalMatrix[15]
+    local combinedX, combinedY, combinedZ = finalMatrix[13], finalMatrix[14], finalMatrix[15] --Converts the matrix to xyz variables
     combinedX, combinedY, combinedZ = (combinedX * 4) // 1, (combinedY * 4) // 1, (combinedZ * 4) // 1 --Each voxel is 0.25m and then floors the result (this is slightly faster than math.floor) 
 
     --d.debugLabel("shrapnel", position, combinedX..","..combinedY..","..combinedZ, 6*time.second)
@@ -301,7 +305,7 @@ function shrapnel.damageVehicleAtWorldPosition(vehicle_id, position, zeroPositio
         return s.addDamage(vehicle_id, amount, voxelX, voxelY, voxelZ, radius)
     end
     return false
-end
+end 
 
 --- @param vehicle_id number The id of the vehicle to check
 --- @param x number The x voxel position to check

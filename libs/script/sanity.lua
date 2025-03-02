@@ -59,7 +59,7 @@ function sanity.checkAll()
 end
 
 function sanity.idleCheck()
-    local RATE = time.minute --Amount of time between each scan
+    local RATE = time.second*30 --Amount of time between each scan
     local SPACER = time.second --Time between each individual type of check once the checks start
     local CHECKS = {sanity.verifyFlakList, sanity.verifyLoadedVehicles}
     for index,func in ipairs(CHECKS) do
