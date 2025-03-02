@@ -34,6 +34,19 @@ function util.getVehiclesNear(location, distance)
 end
 
 ---@param list table the list to search
+---@param value any the value to search for
+---@return boolean found true if the value was found, false if not
+---@return number index the index of the value in the list, if not found then its -1
+function util.isValueInList(list, value)
+	for i, v in pairs(list) do
+		if v == value then
+			return true, i
+		end
+	end
+	return false, -1
+end
+
+---@param list table the list to search
 ---@param value any the value to remove
 ---@return number index the index of the removed value, if no values was removed then its -1
 ---Removes the first instance of the value from the given list

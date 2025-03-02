@@ -5,7 +5,10 @@ local function printMessage(msg)
     s.announce("[Flak Sanity Checker]", msg)
 end
 
+---@return number TotalIssues
+---@return number TotalFixed
 function sanity.verifyFlakList()
+    local notFixed = 0
     local fixed = 0
     --Check for duplicates
     for i, flak in pairs(g_savedata.spawnedFlak) do
@@ -13,15 +16,19 @@ function sanity.verifyFlakList()
             if i ~= j and flak.vehicle_id == flak2.vehicle_id then
                 printMessage("Duplicate flak vehicle found: "..flak.vehicle_id)
                 table.remove(g_savedata.spawnedFlak, i)
+                issues = issues + 1
                 fixed = fixed + 1
                 break
             end
         end
     end
-    return fixed
+    return notFixed+fixed, fixed
 end
 
+---@return number TotalIssues
+---@return number TotalFixed
 function sanity.verifyLoadedVehicles()
+    local notFixed = 0
     local fixed = 0
     --Check for duplicates
     for i, vehicle in pairs(g_savedata.loadedVehicles) do
@@ -47,21 +54,31 @@ function sanity.verifyLoadedVehicles()
     for i, vehicle_id in pairs(g_savedata.loadedVehicles) do
         if not g_savedata.vehicleInfo[vehicle_id] then
             printMessage("Loaded vehicle missing vehicle info: "..vehicle_id)
+            notFixed = notFixed + 1
         end
     end
+    return notFixed+fixed, fixed
 end
 
+local CHECKS = {sanity.verifyFlakList, sanity.verifyLoadedVehicles}
 function sanity.checkAll()
+    local issues = 0
     local fixed = 0
-    fixed = fixed + sanity.verifyFlakList()
-    fixed = fixed + sanity.verifyLoadedVehicles()
-    printMessage("Sanity check complete. "..fixed.." issues fixed.")
+    for i,func in ipairs(CHECKS) do
+        local thisNotFixed, thisFixed = func()
+        issues = issues + thisNotFixed
+        fixed = fixed + thisFixed
+    end
+    if fixed > 0 or issues > 0 then
+        printMessage("Sanity check complete. "..fixed.." issues fixed. "..issues.." issues remain.")
+    else
+        printMessage("Sanity check complete. No issues were found.")
+    end
 end
 
 function sanity.idleCheck()
     local RATE = time.second*30 --Amount of time between each scan
     local SPACER = time.second --Time between each individual type of check once the checks start
-    local CHECKS = {sanity.verifyFlakList, sanity.verifyLoadedVehicles}
     for index,func in ipairs(CHECKS) do
         if isTickID(index*SPACER, RATE) then
             func()

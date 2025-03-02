@@ -187,8 +187,12 @@ function onTick(game_ticks)
 end
 
 function onVehicleLoad(vehicle_id)
-	table.insert(g_savedata.loadedVehicles, vehicle_id)
-	d.printDebug("Added vehicle ",vehicle_id," to loaded vehicles list")
+	if not util.isValueInList(g_savedata.loadedVehicles, vehicle_id) then
+		table.insert(g_savedata.loadedVehicles, vehicle_id)
+		d.printDebug("Added vehicle ",vehicle_id," to loaded vehicles list")
+	else
+		d.printDebug("Vehicle ",vehicle_id," is already in loaded vehicles list. This may happen if when a save is loaded")
+	end
 
 	--Change flak simulation status
 	local isFlak, flakData = flakMain.vehicleIsInSpawnedFlak(vehicle_id)

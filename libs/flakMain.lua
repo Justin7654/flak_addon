@@ -13,8 +13,6 @@ function flakMain.isVehicleFlak(vehicle_id)
         return hasTag
     end
     return false
-    --local _, is_success = server.getVehicleSign(vehicle_id, "IS_AI_FLAK")
-    --return is_success
 end
 
 --- Adds the specified vehicle to the loaded flak list.
@@ -232,41 +230,6 @@ function flakMain.calculateLead(flak)
     return lead
 end
 
---[[
---- Calculate the position the flak should aim at to hit the target, accounting for t
---- @param flakMatrix SWMatrix the matrix of the flak vehicle
---- @param targetMatrix SWMatrix the matrix of the target
---- @param lastTargetMatrix SWMatrix the last matrix of the flak target, used to calculate velocity and acceleration for the target
---- @param timeBetween number the amount of time in ticks between when the current target position was taken and the last target matrix was taken
-function flakMain.calculateLead(flakMatrix, targetMatrix, lastTargetMatrix, timeBetween)
-    local travelTime = flakMain.calculateTravelTime(targetMatrix, flakMatrix) --Travel time in ticks
-
-    --Calculate the velocity of the target
-    local x1, y1, z1 = matrix.position(targetMatrix)
-    local x2, y2, z2 = matrix.position(lastTargetMatrix)
-    local vx = x1 - x2
-    local vy = y1 - y2
-    local vz = z1 - z2
-
-    --Have velocity account for the timeBetween
-    vx = vx/timeBetween
-    vy = vy/timeBetween
-    vz = vz/timeBetween
-
-    -- Move the targetMatrix using the bullets travelTime and target velocity
-    x3,y3,z3 = matrix.position(targetMatrix)
-    x = x1 + vx * travelTime
-    y = y1 + vy * travelTime
-    z = z1 + vz * travelTime
-
-    travelTime = flakMain.calculateTravelTime(matrix.translation(x,y,z), flakMatrix)
-    d.debugLabel("lead", targetMatrix, "Target", travelTime)
-    d.debugLabel("lead", lastTargetMatrix, "Last Target", travelTime)
-    d.debugLabel("lead", matrix.translation(x,y,z), "Lead", travelTime)
-    return matrix.translation(x, y, z)
-end--]]
-
-
 --- Generates a flak explosion nearby the given matrix.
 --- @param sourceMatrix SWMatrix the position of the gun thats firing
 --- @param targetMatrix SWMatrix the matrix to generate the explosion at
@@ -303,17 +266,20 @@ function flakMain.fireFlak(sourceMatrix, targetMatrix) --Convert to using flakOb
         d.printError("Fire", "Spread is infinite! Defaulting to 10. AltFactor: ",altFactor,", weatherMultiplier: ",weatherMultiplier)
         spread = 10
     end
+    if type(spread) ~= "number" then
+        d.printError("Fire", "Spread is not a number! Defaulting to 10. AltFactor: ",altFactor,", weatherMultiplier: ",weatherMultiplier)
+        spread = 10
+    end
 
     --Randomize the targetMatrix based on spread
     spread = math.floor(spread)
-    x = x + math.random(-spread, spread) --spread has no integer representation error. TODO: Fix 2/8/2025
+    x = x + math.random(-spread, spread) --spread has no integer representation error. TODO: Fix 2/8/2025 - Maybe mitigated 3/2/2025
     alt = alt + math.random(-spread, spread)
     z = z + math.random(-spread, spread)
     local resultMatrix = matrix.translation(x,alt, z)
 
     --Randomize travel time alittle
     local travelTime = flakMain.calculateTravelTime(targetMatrix, sourceMatrix)
-    --travelTime = travelTime + math.random() * 3 -- 0-3 seconds ahead
     
     --Spawn the explosion
     --- @class ExplosionData
