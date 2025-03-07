@@ -19,14 +19,14 @@ collisionDetection = require("libs.collisionDetection")
 g_savedata = {
 	tickCounter = 0,
 	settings = {
-		simulateShrapnel = property.checkbox("Shrapnel Simulation (impacts performance)", true),
+		simulateShrapnel = property.checkbox("Shrapnel Simulation (impacts performance)", "true"),
 		ignoreWeather = property.checkbox("Weather does not affect flak accuracy",  false),
 		flakShellSpeed = property.slider("Flak Shell Speed (m/s)", 100, 1000, 100, 500),
 		fireRate = property.slider("Flak Fire Rate (seconds between shots)", 1, 20, 1, 4),
 		minAlt = property.slider("Minimum Fire Altitude Base", 100, 700, 50, 200),
 		flakAccuracyMult = property.slider("Flak Accuracy Multiplier", 0.5, 1.5, 0.1, 1),
 		shrapnelSubSteps = property.slider("Flak simulation substeps (SIGNIFICANT PERFORAMNCE IMPACT)", 1, 3, 1, 2),
-		shrapnelBombSkipping = property.checkbox("(ADVANCED) Shrapnel optimization 1 (disables collision checks for likely bombs/missiles, very significantly improving performance)", true)
+		shrapnelBombSkipping = property.checkbox("(ADVANCED) Shrapnel optimization 1 (disables collision checks for likely bombs/missiles, very significantly improving performance)", "true"),
 	},
 	fun = {
 		noPlayerIsSafe = {
