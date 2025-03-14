@@ -5,6 +5,6 @@
 	"out": "{SW_SAVE}/data/missions/{NAME}/script.lua",
 	"transformers": {
 		"combiner": true,
-		"tracing": false
+		"tracing": "simple"
 	}
 }

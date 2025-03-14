@@ -258,22 +258,21 @@ function flakMain.fireFlak(sourceMatrix, targetMatrix) --Convert to using flakOb
     --Calculate accuracy
     local spread = 0
     local altFactor = 15/(0.5 ^ (alt/320)) --10+(0.2*alt)
-    local spread = altFactor
-    local spread = spread * weatherMultiplier
+    local spread = altFactor * weatherMultiplier
     spread = spread / math.max(g_savedata.settings.flakAccuracyMult, 0.1)
 
     if spread == math.huge then
-        d.printError("Fire", "Spread is infinite! Defaulting to 10. AltFactor: ",altFactor,", weatherMultiplier: ",weatherMultiplier)
+        d.printError("Fire", "Spread is infinite! Defaulting to 10. AltFactor: ",altFactor,", weatherMultiplier: ",weatherMultiplier," flakAccuracyMult: ",g_savedata.settings.flakAccuracyMult)
         spread = 10
     end
     if type(spread) ~= "number" then
-        d.printError("Fire", "Spread is not a number! Defaulting to 10. AltFactor: ",altFactor,", weatherMultiplier: ",weatherMultiplier)
+        d.printError("Fire", "Spread is not a number! Defaulting to 10. AltFactor: ",altFactor,", weatherMultiplier: ",weatherMultiplier," flakAccuracyMult: ",g_savedata.settings.flakAccuracyMult)
         spread = 10
     end
 
     --Randomize the targetMatrix based on spread
     spread = math.floor(spread)
-    x = x + math.random(-spread, spread) --spread has no integer representation error. TODO: Fix 2/8/2025 - Maybe mitigated 3/2/2025
+    x = x + math.random(-spread, spread)
     alt = alt + math.random(-spread, spread)
     z = z + math.random(-spread, spread)
     local resultMatrix = matrix.translation(x,alt, z)

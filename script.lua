@@ -187,6 +187,10 @@ function onTick(game_ticks)
 end
 
 function onVehicleLoad(vehicle_id)
+	if util.vehicleExists(vehicle_id) then
+		d.printWarning("Vehicle ",vehicle_id," was loaded does not exist. This is really weird, aborting to prevent error")
+		return
+	end
 	if not util.isValueInList(g_savedata.loadedVehicles, vehicle_id) then
 		table.insert(g_savedata.loadedVehicles, vehicle_id)
 		d.printDebug("Added vehicle ",vehicle_id," to loaded vehicles list")

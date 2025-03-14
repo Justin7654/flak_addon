@@ -231,4 +231,10 @@ function util.sortNamedTable(inputTable, compareFunc)
 	return sortedTable
 end
 
+--- Checks if the given vehicle_id is a valid vehicle
+function util.vehicleExists(vehicle_id)
+	local _, success = s.getVehicleSimulating(vehicle_id)
+	return success
+end
+
 return util

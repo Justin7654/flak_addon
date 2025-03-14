@@ -46,7 +46,7 @@ function sanity.verifyLoadedVehicles()
         _, success = s.getVehicleSimulating(vehicle_id)
         if not success then
             printMessage("Non-existant loaded vehicle entry found: "..vehicle_id)
-            table.remove(g_savedata.loadedVehicles, i)
+            onVehicleDespawn(vehicle_id)
             fixed = fixed + 1
         end
     end
