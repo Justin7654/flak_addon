@@ -187,7 +187,7 @@ function onTick(game_ticks)
 end
 
 function onVehicleLoad(vehicle_id)
-	if util.vehicleExists(vehicle_id) then
+	if not util.vehicleExists(vehicle_id) then
 		d.printWarning("Vehicle ",vehicle_id," was loaded does not exist. This is really weird, aborting to prevent error")
 		return
 	end
@@ -207,18 +207,22 @@ function onVehicleLoad(vehicle_id)
 
 	--Backup for if the vehicleInfo value isn't set yet. Because onVehicleSpawn doesn't call for vehicles that are there at world start
 	if g_savedata.vehicleInfo[vehicle_id] == nil then
-		local group_id = s.getVehicleData(vehicle_id).group_id
-		g_savedata.vehicleInfo[vehicle_id] = {
-			needs_setup = true,
-			group_id = group_id,
-			main_vehicle_id = s.getVehicleGroup(group_id)[1],
-			owner = -1,
-		}
-		d.printDebug("Added incomplete vehicle info for ",vehicle_id)
+		local vehicleData, success = s.getVehicleData(vehicle_id)
+		if success then 
+			g_savedata.vehicleInfo[vehicle_id] = {
+				needs_setup = true,
+				group_id = vehicleData.group_id,
+				main_vehicle_id = s.getVehicleGroup(vehicleData.group_id)[1],
+				owner = -1,
+			}
+			d.printDebug("Added incomplete vehicle info for ",vehicle_id)
+		else
+			d.printError("Vehicle ",vehicle_id," was loaded but getVehicleData failed - failed to create vehicleInfo entry!")
+		end
 	end
 
 	--Setup the vehicle if its not already
-	if g_savedata.vehicleInfo[vehicle_id].needs_setup then
+	if g_savedata.vehicleInfo[vehicle_id] ~= nil and g_savedata.vehicleInfo[vehicle_id].needs_setup then
 		d.printDebug("Setting up vehicle ",vehicle_id)
 		local vehicleInfo = g_savedata.vehicleInfo[vehicle_id]
 		local loadedVehicleData = s.getVehicleComponents(vehicle_id)
@@ -329,7 +333,9 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 	if string.lower(prefix) ~= "?flak" then
 		return
 	end
-	command = string.lower(command)
+
+	command = string.lower(command or "")
+
 	args = {...}
 	if command == "debug" then
 		if args[1] == nil then
@@ -383,7 +389,7 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 	elseif command == "loadedvehicles" then
 		s.announce("[Flak Commands]", "Loaded Vehicles: "..table.concat(g_savedata.loadedVehicles, ", "))
 	elseif command == "setting" then
-		chosenKey = string.lower(args[1])
+		chosenKey = string.lower(args[1] or "")
 		chosenValue = args[2]
 		if chosenKey == "accuracy" then
 			if chosenValue then
