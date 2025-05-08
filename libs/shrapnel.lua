@@ -51,7 +51,7 @@ function shrapnel.tickAll()
                 --Should be valid, just make sure that you can get its data fine
                 local vehicleMatrix, posSuccess = s.getVehiclePos(vehicle_id)
                 if posSuccess then
-                    --Check that its higher than the base altitude to exclude vehicles that cant be targetted by flak
+                    --Check that its higher than the base altitude to exclude vehicles that cant be targeted by flak
                     local x,y,z = vehicleMatrix[13], vehicleMatrix[14], vehicleMatrix[15]
                     if y > g_savedata.settings.minAlt or not FILTER_GROUND_VEHICLES then
                         d.startProfile("calculateVehicleVoxelZeroPosition")
@@ -78,7 +78,7 @@ function shrapnel.tickAll()
     d.endProfile("tickAllShrapnel")
 end
 
---- Updats a shrapnel object
+--- Updates a shrapnel object
 --- @param chunk shrapnelChunk The chunk to update
 --- @param vehiclesToCheck table<number, number> a list of all the vehicles to check collision for
 --- @param vehicleZeroPositions table<number, SWMatrix> a list of all the vehicles cached zero positions
@@ -86,10 +86,10 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
     if chunk == nil then
         return d.printError("Shrapnel", "Failed to tick shrapnel chunk, chunk is nil")
     end
-    d.startProfile("tickShrapnelChunk")
+    --d.startProfile("tickShrapnelChunk")
 
-    --Pre-decide which vehicles are close enough since they generally wont change inbetween steps, and it wont matter much if it does change
-    d.startProfile("decideVehicles")
+    --Pre-decide which vehicles are close enough since they generally wont change between steps, and it wont matter much if it does change
+    --d.startProfile("decideVehicles")
     local finalVehicles = {}
     local futureX = chunk.positionX + chunk.fullVelocityX
     local futureY = chunk.positionY + chunk.fullVelocityY
@@ -102,13 +102,22 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
             table.insert(finalVehicles, vehicle_id)
         end
     end
-    d.endProfile("decideVehicles")
+    --d.endProfile("decideVehicles")
 
     --Start stepping the position and checking if its hit anything
     local hit = false
     local checks = 0
-    d.startProfile("Substeps")
-    for step=1, g_savedata.settings.shrapnelSubSteps do
+    local totalSteps = g_savedata.settings.shrapnelSubSteps
+    
+    if #finalVehicles == 0 then
+        --If there are no vehicles to check, then we can skip the steps and just move it to the final position
+        chunk.positionX = futureX
+        chunk.positionY = futureY
+        chunk.positionZ = futureZ
+        totalSteps = 0
+    end
+
+    for step=1, totalSteps do
         -- Update position
         chunk.positionX = chunk.positionX + chunk.velocityX
         chunk.positionY = chunk.positionY + chunk.velocityY
@@ -129,13 +138,14 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
                 break
             end
         end
-
+        
+        --d.debugLabel("shrapnel", hitPosition, "!", 1400, 40)
+        
         --Break out of the stepping if it hit something
         if hit then
             break
         end
     end
-    d.endProfile("Substeps")
     
     --Shrapnel debug
     if g_savedata.debug.shrapnel then
@@ -160,14 +170,14 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
         end
         g_savedata.shrapnelChunks[chunk.id] = nil
     end
-    d.endProfile("tickShrapnelChunk")
+    --d.endProfile("tickShrapnelChunk")
 end
 
 --- Spawns a explosion of shrapnel at the given position moving outwards
 --- @param sourcePos SWMatrix The position to spawn the shrapnel at
 --- @param shrapnelAmount number The amount of shrapnel to spawn
 function shrapnel.explosion(sourcePos, shrapnelAmount)
-    local SHRAPNEL_SPEED = 95
+    local SHRAPNEL_SPEED = 120 --95
     --Cache some globals as locals
     local random = math.random
     local sin = math.sin
@@ -220,7 +230,7 @@ function shrapnel.spawnShrapnel(position, velocityX, velocityY, velocityZ)
         fullVelocityY = velocityY,
         fullVelocityZ = velocityZ,
         ui_id = nil,
-        life = 90,
+        life = 60,
         id = g_savedata.shrapnelCurrentID,
     }
     g_savedata.shrapnelChunks[g_savedata.shrapnelCurrentID] = shrapnelChunk

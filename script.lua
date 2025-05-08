@@ -25,8 +25,8 @@ g_savedata = {
 		fireRate = property.slider("Flak Fire Rate (seconds between shots)", 1, 20, 1, 4),
 		minAlt = property.slider("Minimum Fire Altitude Base", 100, 700, 50, 200),
 		flakAccuracyMult = property.slider("Flak Accuracy Multiplier", 0.5, 1.5, 0.1, 1),
-		shrapnelSubSteps = property.slider("Flak simulation substeps (SIGNIFICANT PERFORAMNCE IMPACT)", 1, 3, 1, 2),
-		shrapnelBombSkipping = property.checkbox("(ADVANCED) Shrapnel optimization 1 (disables collision checks for likely bombs/missiles, very significantly improving performance)", "true"),
+		shrapnelSubSteps = property.slider("(ADVANCED) Shrapnel simulation substeps (multiplies performance impact for better collision detection)", 1, 4, 1, 3),
+		shrapnelBombSkipping = true
 	},
 	fun = {
 		noPlayerIsSafe = {
@@ -112,7 +112,7 @@ function onTick(game_ticks)
 	--s.announce("[]", g_savedata.tickCounter)
     g_savedata.tickCounter = g_savedata.tickCounter + 1
 
-	--Loop through all flak once every 10 seconds and if they are targetting a player higher than 150m then
+	--Loop through all flak once every 10 seconds and if they are targeting a player higher than 150m then
 	local updateRate = time.second
 	local fireRate = time.second*g_savedata.settings.fireRate
     for index, flak in pairs(g_savedata.spawnedFlak) do
@@ -269,7 +269,7 @@ function onVehicleLoad(vehicle_id)
 				d.printDebug("Unable to get base voxel for vehicle ",vehicle_id," because it has no components")
 				--TODO: Maybe brute force scan over a large area of voxels over time using tasks like how the debugVoxels command work?
 			elseif g_savedata.settings.shrapnelBombSkipping and #allComponents ~= 0 and #allComponents == #com.guns then
-				--Skip if it doesn't have a 0,0,0 block, and all its components are bombs. Very high success rate and suprisingly low false positive rate
+				--Skip if it doesn't have a 0,0,0 block, and all its components are bombs. Very high success rate and surprisingly low false positive rate
 				d.debugLabel("detected_bombs", s.getVehiclePos(vehicle_id), "Likely bomb? "..tostring(#com.guns), 5*time.second)
 				d.printDebug("Skipping getting base voxel for vehicle ",vehicle_id," because its likely a bomb")
 			else
@@ -408,9 +408,15 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 			end
 		end
 	elseif command == "testshrapnel" then
+		local velocity = args[1]
+		if velocity ~= nil then
+			velocity = tonumber(velocity) or -10
+		else
+			velocity = -10
+		end
 		local playerPos = s.getPlayerPos(user_peer_id)
 		playerPos[14] = playerPos[14] + 5 --Move it up 5m
-		shrapnel.spawnShrapnel(playerPos, 0, -10, 0)
+		shrapnel.spawnShrapnel(playerPos, 0, velocity, 0)
 	elseif command == "spawnshrapnel" or command == "spawnshrap" then
 		local num
 		if args[1] ~= nil then 

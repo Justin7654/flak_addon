@@ -22,6 +22,7 @@ function sanity.verifyFlakList()
             end
         end
     end
+
     return notFixed+fixed, fixed
 end
 
@@ -45,7 +46,7 @@ function sanity.verifyLoadedVehicles()
     for i, vehicle_id in pairs(g_savedata.loadedVehicles) do
         _, success = s.getVehicleSimulating(vehicle_id)
         if not success then
-            printMessage("Non-existant loaded vehicle entry found: "..vehicle_id)
+            printMessage("Non-existent loaded vehicle entry found: "..vehicle_id)
             onVehicleDespawn(vehicle_id)
             fixed = fixed + 1
         end

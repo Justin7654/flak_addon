@@ -69,46 +69,8 @@ function flakMain.removeVehicleFromFlak(vehicle_id)
     return false
 end
 
---- Verifys that nothings going wrong with the flak list.
---- @return boolean found_issues True if any issues were found
---- @return number issues_fixed The total amount of issues fixed
-function flakMain.verifyFlakList()
-    local fixed = 0
-
-    --Check if theres any duplicates
-    for i, flak in pairs(g_savedata.spawnedFlak) do
-        for j, flak2 in pairs(g_savedata.spawnedFlak) do
-            if i ~= j and flak.vehicle_id == flak2.vehicle_id then
-                s.announce("[Flak Sanity Check]", "Duplicate flak vehicle found: "..flak.vehicle_id)
-                table.remove(g_savedata.spawnedFlak, i)
-                fixed = fixed + 1
-                break
-            end
-        end
-    end
-
-    --Make sure all vehicles in loaded vehicles exist
-    for i, vehicle_id in pairs(g_savedata.loadedVehicles) do
-        _, success = s.getVehicleSimulating(vehicle_id)
-        if not success then
-            s.announce("[Flak Sanity Check]", "Non-existant loaded vehicle entry found: "..vehicle_id)
-            table.remove(g_savedata.loadedVehicles, i)
-            fixed = fixed + 1
-        end
-    end
-
-    --Show Results
-    if fixed > 0 then
-        s.announce("[Flak Sanity Check]", "Sanity check complete. "..tostring(fixed).." issues fixed")
-        return true, fixed
-    end
-    
-    server.announce("[Flak Sanity Check]", "Sanity check complete. No issues found")
-    return false, 0
-end
-
 --- @param flakData FlakData the vehicle id to check
---- @return SWMatrix|nil targetMatrix the location the flak is targetting
+--- @return SWMatrix|nil targetMatrix the location the flak is targeting
 --- Returns a matrix of the flak vehicles target using its dials. If a dial is not found, it will return a nil
 function flakMain.getFlakTarget(flakData)
     if flakData.simulating and false then
@@ -144,11 +106,11 @@ function flakMain.getPseudoTarget(Flak)
         --Check if the player is still in range
         local playerPos, success = server.getPlayerPos(Flak.pseudoTrackingPlayer)
         if success and playerPos[14] > flakMain.calculateMinAlt(Flak,playerPos) and matrix.distance(flakPos, playerPos) < sightDistance then
-            --This player is still in range. Keep targetting them
+            --This player is still in range. Keep targeting them
             return playerPos
         else
-            --This player is no longer in range. Stop targetting them
-            d.printDebug("Pseudo flak is no longer targetting player ",Flak.pseudoTrackingPlayer)
+            --This player is no longer in range. Stop targeting them
+            d.printDebug("Pseudo flak is no longer targeting player ",Flak.pseudoTrackingPlayer)
             Flak.pseudoTrackingPlayer = nil
         end
     end
@@ -161,7 +123,7 @@ function flakMain.getPseudoTarget(Flak)
             --This player is high enough to be shot by flak
             if success and matrix.distance(flakPos, playerPos) < sightDistance then
                 --This player is close enough to the flak
-                d.printDebug("Pseudo flak is targetting player ",player.id)
+                d.printDebug("Pseudo flak is targeting player ",player.id)
                 Flak.pseudoTrackingPlayer = player.id
                 return playerPos
             end
@@ -260,9 +222,18 @@ function flakMain.fireFlak(sourceMatrix, targetMatrix) --Convert to using flakOb
     local altFactor = 15/(0.5 ^ (alt/320)) --10+(0.2*alt)
     local spread = altFactor * weatherMultiplier
     spread = spread / math.max(g_savedata.settings.flakAccuracyMult, 0.1)
-
+    d.printDebug("Spread is ",spread," with altFactor ",altFactor," and weatherMultiplier ",weatherMultiplier," and flakAccuracyMult ",g_savedata.settings.flakAccuracyMult)
+    d.printDebug("alt is ",alt)
+    if alt > 30000 then
+        d.printDebug("Fire", "Targeted fire altitude is too high! Cancelling due to high probability of infinity error. Altitude: ",alt)
+        return
+    end
+    if spread > 9999 then
+        d.printDebug("Fire", "Spread is too high! Defaulting to 1000. Cancelling. Spread was ",spread,", altFactor: ",altFactor,", weatherMultiplier: ",weatherMultiplier," alt: ",alt)
+        return
+    end
     if spread == math.huge then
-        d.printError("Fire", "Spread is infinite! Defaulting to 10. AltFactor: ",altFactor,", weatherMultiplier: ",weatherMultiplier," flakAccuracyMult: ",g_savedata.settings.flakAccuracyMult)
+        d.printError("Fire", "Spread is infinite! Defaulting to 10. AltFactor: ",altFactor,", weatherMultiplier: ",weatherMultiplier," alt: ",alt)
         spread = 10
     end
     if type(spread) ~= "number" then
