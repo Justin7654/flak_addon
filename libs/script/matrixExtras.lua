@@ -1,3 +1,4 @@
+---@diagnostic disable: undefined-doc-name
 --- Source: https://github.com/nameouschangey/Stormworks_LifeBoatAPI_Addon/blob/main/Maths/Matrix.lua
 
 --- run 10,000 times/tick - rough benchmarks

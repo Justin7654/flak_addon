@@ -9,6 +9,7 @@
 local collisionDetection = {}
 local d = require("libs.script.debugging")
 local taskService = require("libs.script.taskService")
+local vehicleInfoManager = require("libs.vehicleInfoManager")
 
 ---@class colliderData
 ---@field baseAABB baseAABB?
@@ -24,7 +25,7 @@ function collisionDetection.calculateExtremes(vehicle_id)
     --Get the farthest point from the center of the vehicle
     --Size in all directions is that distance*2
     local vehicleInfo = g_savedata.vehicleInfo[vehicle_id]
-    local isSetup, vehicleInfo = isVehicleDataSetup(vehicleInfo)
+    local isSetup, vehicleInfo = vehicleInfoManager.isVehicleDataSetup(vehicleInfo)
     if isSetup then
         local com = vehicleInfo.components
 		local allComponents = util.combineList(com.batteries, com.buttons, com.dials, com.guns, com.hoppers, com.rope_hooks, com.seats, com.signs, com.tanks)
@@ -89,7 +90,7 @@ end
 --- @return baseAABB?
 function collisionDetection.generateBaseAABB(vehicle_id)
     local vehicleInfo = g_savedata.vehicleInfo[vehicle_id]
-    local isSetup, vehicleInfo = isVehicleDataSetup(vehicleInfo)
+    local isSetup, vehicleInfo = vehicleInfoManager.isVehicleDataSetup(vehicleInfo)
     if isSetup then
         local corners = collisionDetection.calculateExtremes(vehicle_id)
         if corners then
@@ -131,7 +132,7 @@ end
 --- Output is the AABB min point and max point in local space
 function collisionDetection.calculateAABB(vehicle_id)
     local vehicleData = g_savedata.vehicleInfo[vehicle_id]
-    local isSetup, vehicleData = isVehicleDataSetup(vehicleData)
+    local isSetup, vehicleData = vehicleInfoManager.isVehicleDataSetup(vehicleData)
     if not isSetup then
         return d.printError("collisionDetection", "Attempted to calculate AABB for a vehicle that isn't setup!")
     end
@@ -212,7 +213,7 @@ end
 
 function collisionDetection.getAABBForVehicle(vehicle_id)
     local vehicleData = g_savedata.vehicleInfo[vehicle_id]
-    local isSetup, vehicleData = isVehicleDataSetup(vehicleData)
+    local isSetup, vehicleData = vehicleInfoManager.isVehicleDataSetup(vehicleData)
     if isSetup and vehicleData.collider_data then
         
     end
@@ -328,4 +329,22 @@ function collisionDetection.generateBBOX(vehicle_id)
     end
 end
 ]]
+
+--[[
+Originally in onVehicleLoad - removed in cleanup
+
+--Set colliderData
+vehicleInfo.collider_data = {
+	baseAABB = nil,
+	aabb = nil,
+	last_update = -1,
+	debug = {
+		minLabel = s.getMapID(),
+		maxLabel = s.getMapID(),
+		cleanTask = nil
+	}
+}
+collisionDetection.generateBaseAABB(vehicle_id)
+]]
+
 return collisionDetection

@@ -32,15 +32,6 @@ function shrapnel.tickAll()
         local vehicleInfo = vehicleInfoTable[vehicle_id]
         if vehicleInfo  == nil then
             d.printDebug("Vehicle info is nil for vehicle ",vehicle_id)
-            --Check if exists
-            local _, success = s.getVehicleSimulating(vehicle_id)
-            if not success then
-                d.printDebug("Above vehicle does not even exist! Acting as if despawned")
-                onVehicleDespawn(vehicle_id)
-            elseif g_savedata.debug.shrapnel then
-                --Show the vehicles positions
-                d.debugLabel("shrapnel", s.getVehiclePos(vehicle_id), "Vehicle "..vehicle_id.." has no vehicleInfo", time.second)
-            end
             --Recover from a error
             vehicleInfo = {owner = -1}
         end

@@ -14,6 +14,7 @@ taskService = require("libs.script.taskService")
 aiming = require("libs.ai.aiming")
 shrapnel = require("libs.shrapnel")
 collisionDetection = require("libs.collisionDetection")
+vehicleInfoManager = require("libs.vehicleInfoManager")
 
 -- Data
 g_savedata = {
@@ -60,8 +61,6 @@ g_savedata = {
 	shrapnelCurrentID = 0,
 }
 
-g_savedata.tickCounter = 0
-
 --- @alias callbackID "freeDebugLabel" | "setPopup" | "flakExplosion" | "tickShrapnelChunk" | "debugVoxelPositions"
 registeredTaskCallbacks = {
 	freeDebugLabel = d.freeDebugLabel,
@@ -82,30 +81,6 @@ s = server
 m = matrix
 
 matrix.emptyMatrix = matrix.translation(0,0,0)
-
----@class vehicleInfo
----@field needs_setup boolean whether the vehicle needs to be setup. If this is true, some data will be nil
----@field group_id number the group which this vehicle belongs to
----@field main_vehicle_id number the main vehicle of this group
----@field owner number the peer_id of the player who spawned the vehicle, or -1 if the server spawned it
----@field components SWVehicleComponents?
----@field vehicle_data SWVehicleData?
----@field base_voxel SWVoxelPos?
----@field collider_data colliderData?
----@field mass number?
----@field voxels number?
-
----@class completeVehicleInfo : vehicleInfo
----@field needs_setup boolean whether the vehicle needs to be setup. If this is true, some data will be nil
----@field group_id number the group which this vehicle belongs to
----@field main_vehicle_id number the main vehicle of this group
----@field owner number the peer_id of the player who spawned the vehicle, or -1 if the server spawned it
----@field components SWVehicleComponents
----@field vehicle_data SWVehicleData
----@field base_voxel SWVoxelPos?
----@field collider_data colliderData
----@field mass number
----@field voxels number
 
 ---@param game_ticks number the number of ticks since the last onTick call (normally 1, while sleeping 400.)
 function onTick(game_ticks)
@@ -187,10 +162,11 @@ function onTick(game_ticks)
 end
 
 function onVehicleLoad(vehicle_id)
-	if not util.vehicleExists(vehicle_id) then
-		d.printWarning("Vehicle ",vehicle_id," was loaded does not exist. This is really weird, aborting to prevent error")
-		return
-	end
+	--if not util.vehicleExists(vehicle_id) then
+		--d.printWarning("Vehicle ",vehicle_id," was loaded does not exist. This is really weird, aborting to prevent error")
+		--return
+	--end
+
 	if not util.isValueInList(g_savedata.loadedVehicles, vehicle_id) then
 		table.insert(g_savedata.loadedVehicles, vehicle_id)
 		d.printDebug("Added vehicle ",vehicle_id," to loaded vehicles list")
@@ -205,96 +181,12 @@ function onVehicleLoad(vehicle_id)
 		d.printDebug("Set flak ",flakData.vehicle_id," to simulating")
 	end
 
-	--Backup for if the vehicleInfo value isn't set yet. Because onVehicleSpawn doesn't call for vehicles that are there at world start
-	if g_savedata.vehicleInfo[vehicle_id] == nil then
-		local vehicleData, success = s.getVehicleData(vehicle_id)
-		if success then 
-			g_savedata.vehicleInfo[vehicle_id] = {
-				needs_setup = true,
-				group_id = vehicleData.group_id,
-				main_vehicle_id = s.getVehicleGroup(vehicleData.group_id)[1],
-				owner = -1,
-			}
-			d.printDebug("Added incomplete vehicle info for ",vehicle_id)
-		else
-			d.printError("Vehicle ",vehicle_id," was loaded but getVehicleData failed - failed to create vehicleInfo entry!")
-		end
-	end
-
-	--Setup the vehicle if its not already
-	if g_savedata.vehicleInfo[vehicle_id] ~= nil and g_savedata.vehicleInfo[vehicle_id].needs_setup then
-		d.printDebug("Setting up vehicle ",vehicle_id)
-		local vehicleInfo = g_savedata.vehicleInfo[vehicle_id]
-		local loadedVehicleData = s.getVehicleComponents(vehicle_id)
-		vehicleInfo.vehicle_data = s.getVehicleData(vehicle_id)
-		vehicleInfo.components = loadedVehicleData.components
-		vehicleInfo.mass = loadedVehicleData.mass
-		vehicleInfo.voxels = loadedVehicleData.voxels
-		vehicleInfo.needs_setup = false
-
-		--Set colliderData
-		vehicleInfo.collider_data = {
-			baseAABB = nil,
-			aabb = nil,
-			last_update = -1,
-			debug = {
-				minLabel = s.getMapID(),
-				maxLabel = s.getMapID(),
-				cleanTask = nil
-			}
-		}
-		collisionDetection.generateBaseAABB(vehicle_id)
-
-		--Setup base voxel data
-		if shrapnel.checkVoxelExists(vehicle_id, 0, 0, 0) then
-			--Safe to use 0,0,0
-			vehicleInfo.base_voxel = {x=0, y=0, z=0}
-		else
-			--In case that 0,0,0 is not a valid voxel, find the closest component and use that instead
-			local com = loadedVehicleData.components
-			local allComponents = util.combineList(com.batteries, com.buttons, com.dials, com.guns, com.hoppers, com.rope_hooks, com.seats, com.signs, com.tanks)
-			local closest = {dist=math.huge, x=0, y=0, z=0}
-			for _, component in pairs(allComponents) do
-				local x,y,z = component.pos.x, component.pos.y, component.pos.z
-				local dist = x*x + y*y + z*z
-				if dist < closest.dist then
-					closest.dist = dist
-					closest.x = x
-					closest.y = y
-					closest.z = z
-				end
-			end
-			
-			if #allComponents == 0 then
-				d.printDebug("Unable to get base voxel for vehicle ",vehicle_id," because it has no components")
-				--TODO: Maybe brute force scan over a large area of voxels over time using tasks like how the debugVoxels command work?
-			elseif g_savedata.settings.shrapnelBombSkipping and #allComponents ~= 0 and #allComponents == #com.guns then
-				--Skip if it doesn't have a 0,0,0 block, and all its components are bombs. Very high success rate and surprisingly low false positive rate
-				d.debugLabel("detected_bombs", s.getVehiclePos(vehicle_id), "Likely bomb? "..tostring(#com.guns), 5*time.second)
-				d.printDebug("Skipping getting base voxel for vehicle ",vehicle_id," because its likely a bomb")
-			else
-				d.printDebug("Set base voxel for vehicle ",vehicle_id," to ",closest.x,",",closest.y,",",closest.z)
-				vehicleInfo.base_voxel = {x=closest.x, y=closest.y, z=closest.z}
-			end
-		end
-	end
-
-	d.printDebug("End callback")
+	vehicleInfoManager.completeVehicleSetup(vehicle_id)
 end
 
 function onVehicleSpawn(vehicle_id, peer_id, x, y, z, group_cost, group_id)
-	--Set vehicle data
-	d.printDebug("onVehicleSpawn")
-	
-	if g_savedata.vehicleInfo[vehicle_id] == nil then
-		d.printDebug("Added incomplete vehicle info for ",vehicle_id)
-		g_savedata.vehicleInfo[vehicle_id] = {
-			needs_setup = true,
-			group_id = group_id,
-			main_vehicle_id = s.getVehicleGroup(group_id)[1],
-			owner = peer_id,
-		}
-	end
+	--Set vehicle data	
+	vehicleInfoManager.initNewVehicle(vehicle_id, peer_id, group_id)
 end
 
 function onGroupSpawn(group_id, peer_id, x, y, z, group_cost)
@@ -326,7 +218,7 @@ function onVehicleDespawn(vehicle_id)
 		d.printDebug("Removed vehicle ",vehicle_id," from loaded vehicles list")
 	end
 	--Delete the vehicle info
-	g_savedata.vehicleInfo[vehicle_id] = nil
+	vehicleInfoManager.cleanVehicleData(vehicle_id)
 end
 
 function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, command, ...)
