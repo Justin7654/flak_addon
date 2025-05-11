@@ -41,7 +41,7 @@ function vehicleInfoManager.initNewVehicle(vehicle_id, peer_id, group_id)
         if group_id == nil then
             local vehicle_data, is_success = s.getVehicleData(vehicle_id)
             if not is_success then
-                d.printError("Failed to get vehicle data for ",vehicle_id, " - file:", SSSWTOOL_SRC_FILE,"... line:", SSSWTOOL_SRC_LINE"\ninitNewVehicle failed!")
+                d.printWarning("Failed to get vehicle data for ",vehicle_id, " - file:", SSSWTOOL_SRC_FILE,"... line:", SSSWTOOL_SRC_LINE"\ninitNewVehicle failed!")
                 return
             end
             group_id = vehicle_data.group_id
