@@ -5,7 +5,7 @@
 ---@class vehicleInfo
 ---@field needs_setup boolean whether the vehicle needs to be setup. If this is true, some data will be nil
 ---@field group_id number the group which this vehicle belongs to
----@field main_vehicle_id number the main vehicle of this group
+---@field main_vehicle_id number? the main vehicle of this group
 ---@field owner number the peer_id of the player who spawned the vehicle, or -1 if the server spawned it
 ---@field components SWVehicleComponents?
 ---@field vehicle_data SWVehicleData?
@@ -17,7 +17,7 @@
 ---@class completeVehicleInfo : vehicleInfo
 ---@field needs_setup boolean whether the vehicle needs to be setup. If this is true, some data will be nil
 ---@field group_id number the group which this vehicle belongs to
----@field main_vehicle_id number the main vehicle of this group
+---@field main_vehicle_id number? the main vehicle of this group
 ---@field owner number the peer_id of the player who spawned the vehicle, or -1 if the server spawned it
 ---@field components SWVehicleComponents
 ---@field vehicle_data SWVehicleData
@@ -47,11 +47,17 @@ function vehicleInfoManager.initNewVehicle(vehicle_id, peer_id, group_id)
             group_id = vehicle_data.group_id
         end
         
+		local main_vehicle_id = nil
+		local vehicleGroupResult, success = s.getVehicleGroup(group_id)
+		if success then
+			main_vehicle_id = vehicleGroupResult[1]
+		end
+
         --Create the table
 		g_savedata.vehicleInfo[vehicle_id] = {
 			needs_setup = true,
 			group_id = group_id,
-			main_vehicle_id = s.getVehicleGroup(group_id)[1],
+			main_vehicle_id = main_vehicle_id,
 			owner = peer_id,
 		}
         d.printDebug("Added incomplete vehicle info for ",vehicle_id)

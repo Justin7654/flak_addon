@@ -82,6 +82,12 @@ m = matrix
 
 matrix.emptyMatrix = matrix.translation(0,0,0)
 
+function onCreate(is_world_create)
+	if is_world_create then
+		s.announce("ICM Flak", "Thanks for using my flak addon! Please be aware that this addon is new and may have bugs. If you encounter any issues, please report it!")
+	end
+end
+
 ---@param game_ticks number the number of ticks since the last onTick call (normally 1, while sleeping 400.)
 function onTick(game_ticks)
 	--s.announce("[]", g_savedata.tickCounter)
@@ -166,12 +172,13 @@ function onVehicleLoad(vehicle_id)
 		--d.printWarning("Vehicle ",vehicle_id," was loaded does not exist. This is really weird, aborting to prevent error")
 		--return
 	--end
+	d.printDebug("onVehicleLoad:", vehicle_id)
 
 	if not util.isValueInList(g_savedata.loadedVehicles, vehicle_id) then
 		table.insert(g_savedata.loadedVehicles, vehicle_id)
 		d.printDebug("Added vehicle ",vehicle_id," to loaded vehicles list")
 	else
-		d.printDebug("Vehicle ",vehicle_id," is already in loaded vehicles list. This may happen if when a save is loaded")
+		d.printDebug("Vehicle ",vehicle_id," is already in loaded vehicles list. This may happen when a save is loaded")
 	end
 
 	--Change flak simulation status
@@ -185,6 +192,7 @@ function onVehicleLoad(vehicle_id)
 end
 
 function onVehicleSpawn(vehicle_id, peer_id, x, y, z, group_cost, group_id)
+	d.printDebug("onVehicleSpawn:", vehicle_id)
 	--Set vehicle data	
 	vehicleInfoManager.initNewVehicle(vehicle_id, peer_id, group_id)
 end
@@ -199,6 +207,7 @@ function onGroupSpawn(group_id, peer_id, x, y, z, group_cost)
 end
 
 function onVehicleUnload(vehicle_id)
+	d.printDebug("onVehicleUnload:", vehicle_id)
 	local index = util.removeFromList(g_savedata.loadedVehicles, vehicle_id)
 
 	--Change flak simulating status
@@ -210,6 +219,7 @@ function onVehicleUnload(vehicle_id)
 end
 
 function onVehicleDespawn(vehicle_id)
+	d.printDebug("onVehicleDespawn:", vehicle_id)
 	--Attempt to remove it from the flak list
 	is_success = flakMain.removeVehicleFromFlak(vehicle_id)
 	--Attempt to remove it from the loadedVehicles list
@@ -278,7 +288,7 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		end
 	elseif command == "viewflak" then
 		s.announce("[Flak Commands]", "Flak Amount: "..#g_savedata.spawnedFlak)
-	elseif command == "loadedvehicles" then
+	elseif command == "load	edvehicles" then
 		s.announce("[Flak Commands]", "Loaded Vehicles: "..table.concat(g_savedata.loadedVehicles, ", "))
 	elseif command == "setting" then
 		chosenKey = string.lower(args[1] or "")
@@ -352,7 +362,7 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		shrapnel.debugVoxelPositions(tostring(args[1]))
 	elseif command == "bench" then
 		local vehicle_id = tonumber(args[1])
-		local runTimes = 50*1000
+		local runTimes = 200*1000
 		local testMatrix = s.getVehiclePos(vehicle_id)
 		local start1 = s.getTimeMillisec()
 		for i=1, runTimes do

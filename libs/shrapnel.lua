@@ -31,7 +31,7 @@ function shrapnel.tickAll()
         --Check if the vehicle is owned by a player so we dont waste time checking AI vehicles or static vehicles
         local vehicleInfo = vehicleInfoTable[vehicle_id]
         if vehicleInfo  == nil then
-            d.printDebug("Vehicle info is nil for vehicle ",vehicle_id)
+            d.printError("Vehicle info is nil for vehicle ",vehicle_id,". Applying emergency rough data fix to prevent error\n"..SSSWTOOL_SRC_FILE, " line:", SSSWTOOL_SRC_LINE)
             --Recover from a error
             vehicleInfo = {owner = -1}
         end
