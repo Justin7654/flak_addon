@@ -77,6 +77,8 @@ time = { -- the time unit in ticks
 	day = 5184000
 }
 
+despawnedVehicleList = {} ---@type table<number, boolean> List of vehicles that have been despawned. Used to avoid weird issues with unVehicleLoad being called after onVehicleDespawn
+
 s = server
 m = matrix
 
@@ -168,11 +170,13 @@ function onTick(game_ticks)
 end
 
 function onVehicleLoad(vehicle_id)
-	--if not util.vehicleExists(vehicle_id) then
-		--d.printWarning("Vehicle ",vehicle_id," was loaded does not exist. This is really weird, aborting to prevent error")
-		--return
-	--end
 	d.printDebug("onVehicleLoad:", vehicle_id)
+
+	--Check if its already despawned, to avoid a weird stormworks issue
+	if despawnedVehicleList[vehicle_id] then
+		d.printDebug("Skipping onVehicleLoad for ",vehicle_id," as its already had onVehicleDespawn called previously")
+		return
+	end
 
 	if not util.isValueInList(g_savedata.loadedVehicles, vehicle_id) then
 		table.insert(g_savedata.loadedVehicles, vehicle_id)
@@ -193,16 +197,17 @@ end
 
 function onVehicleSpawn(vehicle_id, peer_id, x, y, z, group_cost, group_id)
 	d.printDebug("onVehicleSpawn:", vehicle_id)
-	--Set vehicle data	
+	--Set vehicle data
 	vehicleInfoManager.initNewVehicle(vehicle_id, peer_id, group_id)
 end
 
 function onGroupSpawn(group_id, peer_id, x, y, z, group_cost)
+	d.printDebug("onGroupSpawn:", group_id)
 	--Add to flak list if its flak
 	local vehicle_group = s.getVehicleGroup(group_id)
 	local main_vehicle_id = vehicle_group[1]
 	if flakMain.isVehicleFlak(main_vehicle_id) then
-		flakMain.addVehicleToSpawnedFlak(main_vehicle_id)		
+		flakMain.addVehicleToSpawnedFlak(main_vehicle_id)
 	end
 end
 
@@ -229,6 +234,8 @@ function onVehicleDespawn(vehicle_id)
 	end
 	--Delete the vehicle info
 	vehicleInfoManager.cleanVehicleData(vehicle_id)
+	--Add to despawned list to avoid weird issues with onVehicleUnload being called after this
+	despawnedVehicleList[vehicle_id] = true
 end
 
 function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, command, ...)
@@ -276,7 +283,7 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		else
 			s.announce("[Flak Commands]", "Event not found; available events:\nNoPlayerIsSafe <difficulty>")
 		end
-	elseif command == "manbulletspeed" and arg[1] then
+	elseif command == "manbulletspeed" and args[1] then
 		g_savedata.settings.flakShellSpeed = tonumber(args[1])
 		s.announce("[Flak Commands]", "Flak shell speed set to "..g_savedata.settings.flakShellSpeed.." m/s by "..s.getPlayerName(user_peer_id))
 	elseif command == "checkowners" then
@@ -288,7 +295,7 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		end
 	elseif command == "viewflak" then
 		s.announce("[Flak Commands]", "Flak Amount: "..#g_savedata.spawnedFlak)
-	elseif command == "load	edvehicles" then
+	elseif command == "loadedvehicles" then
 		s.announce("[Flak Commands]", "Loaded Vehicles: "..table.concat(g_savedata.loadedVehicles, ", "))
 	elseif command == "setting" then
 		chosenKey = string.lower(args[1] or "")
