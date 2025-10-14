@@ -26,6 +26,7 @@ function shrapnel.tickAll()
     local vehiclesToCheck = {}
     local vehiclePositions = {}
     local vehicleZeroPositions = {}
+    local vehicleColliderRadiuses = {}
     for _,vehicle_id in ipairs(g_savedata.loadedVehicles) do
         --Check if the vehicle is owned by a player so we dont waste time checking AI vehicles or static vehicles
         local vehicleInfo = vehicleInfoTable[vehicle_id]
@@ -53,6 +54,7 @@ function shrapnel.tickAll()
                             table.insert(vehiclesToCheck, vehicle_id)
                             vehiclePositions[vehicle_id] = {vehicleX, vehicleY, vehicleZ}
                             vehicleZeroPositions[vehicle_id] = matrixExtras.invert(vehicleZeroPosition)
+                            vehicleColliderRadiuses[vehicle_id] = vehicleInfo.collider_data.radius * vehicleInfo.collider_data.radius -- Store the squared radius for distance checks
                         end
                     end
                 end
@@ -63,7 +65,7 @@ function shrapnel.tickAll()
 
     -- Go through all the shrapnel chunks and tick them
     for _, chunk in pairs(g_savedata.shrapnelChunks) do
-        shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, vehicleZeroPositions)
+        shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, vehicleZeroPositions, vehicleColliderRadiuses)
     end
     d.endProfile("tickAllShrapnel")
 end
@@ -71,8 +73,10 @@ end
 --- Updates a shrapnel object
 --- @param chunk shrapnelChunk The chunk to update
 --- @param vehiclesToCheck table<number, number> a list of all the vehicles to check collision for
+--- @param vehiclePositions table<number, table<number, number>> a list of all the vehicles cached world positions
 --- @param vehicleZeroPositions table<number, SWMatrix> a list of all the vehicles cached zero positions
-function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, vehicleZeroPositions)
+--- @param vehicleColliderRadiuses table<number, number> a list of all the vehicles cached collider radiuses
+function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, vehicleZeroPositions, vehicleColliderRadiuses)
     if chunk == nil then
         return d.printError("Shrapnel", "Failed to tick shrapnel chunk, chunk is nil")
     end
@@ -84,10 +88,8 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
     local futureX = chunk.positionX + chunk.fullVelocityX
     local futureY = chunk.positionY + chunk.fullVelocityY
     local futureZ = chunk.positionZ + chunk.fullVelocityZ
-    local radius = 30
-    local radiusSquared = radius * radius
     for i,vehicle_id in ipairs(vehiclesToCheck) do
-        --Check if its more than 25m away from the final position of this tick
+        --Check if its more than 30m away from the final position of this tick
         local vehicleMatrix = vehiclePositions[vehicle_id]
         local posX, posY, posZ = vehicleMatrix[1], vehicleMatrix[2], vehicleMatrix[3]
         if ALWAYS_CHECK_COLLISION_DEBUG then
@@ -96,7 +98,7 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
             local dx = futureX - posX
             local dy = futureY - posY
             local dz = futureZ - posZ
-            if (dx*dx + dy*dy + dz*dz) < radiusSquared then
+            if (dx*dx + dy*dy + dz*dz) < vehicleColliderRadiuses[vehicle_id] then
                 table.insert(finalVehicles, vehicle_id)
             end
         end

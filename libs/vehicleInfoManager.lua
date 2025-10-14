@@ -2,6 +2,9 @@
     Description: Contains functions used in callbacks like onVehicleLoad to gather/cache vehicle data
 ]]
 
+---@class colliderData
+---@field radius number the radius of the bounding sphere around the vehicle
+
 ---@class vehicleInfo
 ---@field needs_setup boolean whether the vehicle needs to be setup. If this is true, some data will be nil
 ---@field group_id number the group which this vehicle belongs to
@@ -27,7 +30,7 @@
 ---@field voxels number
 
 d = require("libs.script.debugging")
-    
+
 vehicleInfoManager = {}
 
 --- Should be called when a vehicle is spawned
@@ -81,6 +84,8 @@ function vehicleInfoManager.completeVehicleSetup(vehicle_id)
 	d.printDebug("Setting up vehicle ",vehicle_id)
 	local vehicleInfo = g_savedata.vehicleInfo[vehicle_id]
 	local loadedVehicleData = s.getVehicleComponents(vehicle_id)
+	local com = loadedVehicleData.components
+	local allComponents = util.combineList(com.batteries, com.buttons, com.dials, com.guns, com.hoppers, com.rope_hooks, com.seats, com.signs, com.tanks)
 	vehicleInfo.vehicle_data = s.getVehicleData(vehicle_id)
 	vehicleInfo.components = loadedVehicleData.components
 	vehicleInfo.mass = loadedVehicleData.mass
@@ -94,8 +99,6 @@ function vehicleInfoManager.completeVehicleSetup(vehicle_id)
 		vehicleInfo.base_voxel = {x=0, y=0, z=0}
 	else
 		--In case that 0,0,0 is not a valid voxel, find the closest component and use that instead
-		local com = loadedVehicleData.components
-		local allComponents = util.combineList(com.batteries, com.buttons, com.dials, com.guns, com.hoppers, com.rope_hooks, com.seats, com.signs, com.tanks)
 		local closest = {dist=math.huge, x=0, y=0, z=0}
 		for _, component in pairs(allComponents) do
 			local x,y,z = component.pos.x, component.pos.y, component.pos.z
@@ -121,7 +124,49 @@ function vehicleInfoManager.completeVehicleSetup(vehicle_id)
 		end
 	end
 
-	
+	-- Compute a bounding sphere using the center of the components' bounding box.
+	if #allComponents == 0 then
+		d.printDebug("Unable to compute collider data for vehicle ",vehicle_id," because it has no components")
+	else
+		local minX, minY, minZ = math.huge, math.huge, math.huge
+		local maxX, maxY, maxZ = -math.huge, -math.huge, -math.huge
+		for _, component in pairs(allComponents) do
+			local x, y, z = component.pos.x, component.pos.y, component.pos.z
+			if x < minX then minX = x end
+			if y < minY then minY = y end
+			if z < minZ then minZ = z end
+			if x > maxX then maxX = x end
+			if y > maxY then maxY = y end
+			if z > maxZ then maxZ = z end
+		end
+
+		-- center of bounding box
+		local centerX = (minX + maxX) / 2
+		local centerY = (minY + maxY) / 2
+		local centerZ = (minZ + maxZ) / 2
+
+		-- compute farthest distance from center
+		local farthestSq = 0
+		for _, component in pairs(allComponents) do
+			local x, y, z = component.pos.x, component.pos.y, component.pos.z
+			local dx = x - centerX
+			local dy = y - centerY
+			local dz = z - centerZ
+			local d2 = dx*dx + dy*dy + dz*dz
+			if d2 > farthestSq then farthestSq = d2 end
+		end
+
+		--The actual stormworks vehicle position is based off center of mass, which we cant calculate
+		--Since we also can only get component positions, add a multiplier to the collider radius to be safe
+		--Wings also usually lack components
+		local MULTIPLIER = 3.0
+		local BLOCK_SIZE = 0.25
+		local radius = (math.sqrt(farthestSq)*BLOCK_SIZE) * MULTIPLIER
+		vehicleInfo.collider_data = {
+			radius = math.max(radius, 4),
+		}
+		d.printDebug("Set collider data for vehicle ",vehicle_id," to radius ",radius)
+	end
 end
 
 --- Deletes the given vehicle info from g_savedata to save unnecessary space

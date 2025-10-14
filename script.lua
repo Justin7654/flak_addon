@@ -47,8 +47,8 @@ g_savedata = {
 		lead = false,
 		task = false,
 		shrapnel = false,
-		bbox = false,
-		detected_bombs = false
+		bounds = false,
+		detected_bombs = false,
 	},
 	tasks = {}, --List of all tasks
 	taskCurrentID = 0, --The current ID for tasks
@@ -230,14 +230,11 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 
 	args = {...}
 	if command == "debug" then
-		if args[1] == nil then
-			s.announce("[Flak Commands]", "Available modes:\nchat\nwarning\nerror\nlead\ntask")
-		else
-			debugType = string.lower(args[1])
-			success = d.toggleDebug(debugType)
-			if not success then
-				s.announce("[Flak Commands]", "Debug mode not found; current configuration:\n"..util.tableToString(g_savedata.debug))
-			end
+		args[1] = args[1] or "none"
+		debugType = string.lower(args[1])
+		success = d.toggleDebug(debugType)
+		if not success then
+			s.announce("[Flak Commands]", "Debug mode not found; current configuration:\n"..util.tableToString(g_savedata.debug))
 		end
 	elseif command == "clear" or command == "reset" then
 		if args[1] == "tracking" then

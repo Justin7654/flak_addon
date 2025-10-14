@@ -23,6 +23,29 @@ function debugging.tickDebugs()
         --server.setPopupScreen(-1, g_savedata.taskDebugUI, "", false, "", 0.6, 0)
         server.removePopup(-1, g_savedata.taskDebugUI)
     end
+
+    if g_savedata.debug.bounds and isTickID(0, 20) then
+        for _, vehicle_id in pairs(g_savedata.loadedVehicles) do
+            local info = g_savedata.vehicleInfo[vehicle_id]
+			if info and info.collider_data and info.collider_data.radius then
+				local vehiclePos = s.getVehiclePos(vehicle_id)
+				local playerPos = s.getPlayerPos(0)
+				local dx = vehiclePos[13] - playerPos[13]
+				local dy = vehiclePos[14] - playerPos[14]
+				local dz = vehiclePos[15] - playerPos[15]
+				local distSq = dx*dx + dy*dy + dz*dz
+				if distSq < (info.collider_data.radius * info.collider_data.radius) then
+                    dist = math.sqrt(distSq)
+                    roundedDist = math.floor(dist / 0.1 + 0.5) * 0.1
+                    roundedRadius = math.floor(info.collider_data.radius / 0.1 + 0.5) * 0.1
+					text = "Within collider radius ("..roundedDist.." / ".. roundedRadius..")"
+					d.debugLabel("bounds", vehiclePos, text, 20, 200)
+				else
+					--d.debugLabel("none", vehiclePos, "Outside collider radius ("..math.sqrt(distSq)..">"..info.collider_data.radius..")", 3*time.second)
+				end
+			end
+		end
+    end
 end
 
 --- @param debugMode string the debug mode to check
