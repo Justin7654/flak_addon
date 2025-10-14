@@ -14,6 +14,7 @@ taskService = require("libs.script.taskService")
 aiming = require("libs.ai.aiming")
 shrapnel = require("libs.shrapnel")
 vehicleInfoManager = require("libs.vehicleInfoManager")
+spatialHash = require("libs.spatialHash")
 
 -- Data
 g_savedata = {
@@ -49,6 +50,7 @@ g_savedata = {
 		shrapnel = false,
 		bounds = false,
 		detected_bombs = false,
+		hash = false,
 	},
 	tasks = {}, --List of all tasks
 	taskCurrentID = 0, --The current ID for tasks
@@ -83,6 +85,8 @@ m = matrix
 
 matrix.emptyMatrix = matrix.translation(0,0,0)
 
+spatialHash.init(20, 400)
+
 function onCreate(is_world_create)
 	if is_world_create then
 		s.announce("ICM Flak", "Thanks for using my flak addon! Please be aware that this addon is new and may have bugs. If you encounter any issues, please report it!")
@@ -93,6 +97,22 @@ end
 function onTick(game_ticks)
 	--s.announce("[]", g_savedata.tickCounter)
     g_savedata.tickCounter = g_savedata.tickCounter + 1
+
+	--Update the spatial hash grid for loaded vehicles
+	for i, vehicle_id in ipairs(g_savedata.loadedVehicles) do
+		if isTickID(i, 2) then
+			--d.printDebug("Updating spatial hash for vehicle ",vehicle_id)
+			if shrapnel.vehicleEligableForShrapnel(vehicle_id) then
+				local pos = s.getVehiclePos(vehicle_id)
+				local vehicleInfo = g_savedata.vehicleInfo[vehicle_id]
+				if vehicleInfo then
+					local radius = vehicleInfo.collider_data.radius
+					local bounds = spatialHash.boundsFromCenterRadius(pos[13], pos[14], pos[15], radius)
+					spatialHash.updateVehicleInGrid(vehicle_id, bounds)
+				end
+			end
+		end
+	end
 
 	--Loop through all flak once every 10 seconds and if they are targeting a player higher than 150m then
 	local updateRate = time.second
@@ -175,7 +195,17 @@ function onVehicleLoad(vehicle_id)
 		d.printDebug("Set flak ",flakData.vehicle_id," to simulating")
 	end
 
+	--Complete setup if needed
 	vehicleInfoManager.completeVehicleSetup(vehicle_id)
+
+	--Add to spatial hash grid
+	if shrapnel.vehicleEligableForShrapnel(vehicle_id) then
+		local pos = s.getVehiclePos(vehicle_id)
+		local vehicleInfo = g_savedata.vehicleInfo[vehicle_id]
+		local radius = vehicleInfo.collider_data.radius
+		local bounds = spatialHash.boundsFromCenterRadius(pos[13], pos[14], pos[15], radius)
+		spatialHash.addVehicleToGrid(vehicle_id, bounds)
+	end
 end
 
 function onVehicleSpawn(vehicle_id, peer_id, x, y, z, group_cost, group_id)
@@ -204,6 +234,9 @@ function onVehicleUnload(vehicle_id)
 		flakData.simulating = false
 		d.printDebug("Set flak ",flakData.vehicle_id," to not simulating")
 	end
+
+	--Remove from spatial hash grid
+	spatialHash.removeVehicleFromGrid(vehicle_id)
 end
 
 function onVehicleDespawn(vehicle_id)
@@ -217,6 +250,8 @@ function onVehicleDespawn(vehicle_id)
 	end
 	--Delete the vehicle info
 	vehicleInfoManager.cleanVehicleData(vehicle_id)
+	--Remove from spatial hash grid
+	spatialHash.removeVehicleFromGrid(vehicle_id)
 	--Add to despawned list to avoid weird issues with onVehicleUnload being called after this
 	despawnedVehicleList[vehicle_id] = true
 end
@@ -348,9 +383,7 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 	elseif command == "debugvoxels" then
 		shrapnel.debugVoxelPositions(tostring(args[1]))
 	elseif command == "bench" then
-		local vehicle_id = tonumber(args[1])
 		local runTimes = 700*1000
-		local testMatrix = s.getVehiclePos(vehicle_id)
 		local start1 = s.getTimeMillisec()
 		for i=1, runTimes do
 			math.randomseed(i)

@@ -46,6 +46,16 @@ function debugging.tickDebugs()
 			end
 		end
     end
+
+    if g_savedata.debug.hash and isTickID(0, 60) then
+        for _, player_id in pairs(s.getPlayers()) do
+            local pos = s.getPlayerPos(player_id.id)
+            local vehicles, count = spatialHash.queryVehiclesNearPoint(pos[13], pos[14], pos[15], 1)
+            local playerBounds = spatialHash.boundsFromCenterRadius(pos[13], pos[14], pos[15], 0.1)
+            local playerCell = spatialHash._getCellRangeForBounds(playerBounds)
+            d.printDebug("Player ",player_id.id," (in ",playerCell,") found ",count," vehicles nearby: ",vehicles)
+        end
+    end
 end
 
 --- @param debugMode string the debug mode to check

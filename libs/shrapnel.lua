@@ -1,15 +1,17 @@
 taskService = require("libs.script.taskService")
 matrixExtras = require("libs.script.matrixExtras")
+spatialHash = require("libs.spatialHash")
 d = require("libs.script.debugging")
 shrapnel = {}
 
 -- Performance tracking excel sheet:https://1drv.ms/x/c/5e0eec0b38cb0474/EWqWCGP-O2VOr-6FV9Qp3EIBIXUpqVqg8FAa8HjlWxKk2g?e=Z7Dj0n
 
-local FILTER_GROUND_VEHICLES = true
-local FILTER_NON_PLAYER_VEHICLES = true
+local FILTER_GROUND_VEHICLES = false
+local FILTER_NON_PLAYER_VEHICLES = false
 local SKIP_TICK_ALL_IF_NO_SHRAPNEL = true
 local ALWAYS_CHECK_COLLISION_DEBUG = false
 local DONT_DESTROY_ON_HIT_DEBUG = false
+local USE_SPATIAL_HASH = false
 
 --- Ticks all shrapnel objects
 --- Made to replace the system of using task service to loop it, since that is slow, and makes some optimizations impossible or complicated
@@ -35,27 +37,24 @@ function shrapnel.tickAll()
             --Recover from a error
             vehicleInfo = {owner = -1}
         end
-        local owner = vehicleInfo.owner
-        if (owner and owner >= 0) or (not FILTER_NON_PLAYER_VEHICLES) then
-            --Check if it has a baseVoxel, otherwise it cant be checked
-            if vehicleInfo.base_voxel ~= nil then
-                --Should be valid, just make sure that you can get its data fine
-                local vehicleMatrix, posSuccess = s.getVehiclePos(vehicle_id)
-                if posSuccess then
-                    --Check that its higher than the base altitude to exclude vehicles that cant be targeted by flak
-                    local x,y,z = vehicleMatrix[13], vehicleMatrix[14], vehicleMatrix[15]
-                    if y > g_savedata.settings.minAlt or not FILTER_GROUND_VEHICLES then
-                        d.startProfile("calculateVehicleVoxelZeroPosition")
-                        local zeroPosSuccess,vehicleZeroPosition = shrapnel.calculateVehicleVoxelZeroPosition(vehicle_id)
-                        d.endProfile("calculateVehicleVoxelZeroPosition")
-                        if zeroPosSuccess then
-                            --This is a valid vehicle. Insert into the tables
-                            local vehicleX, vehicleY, vehicleZ = matrix.positionFast(vehicleMatrix)
-                            table.insert(vehiclesToCheck, vehicle_id)
-                            vehiclePositions[vehicle_id] = {vehicleX, vehicleY, vehicleZ}
-                            vehicleZeroPositions[vehicle_id] = matrixExtras.invert(vehicleZeroPosition)
-                            vehicleColliderRadiuses[vehicle_id] = vehicleInfo.collider_data.radius * vehicleInfo.collider_data.radius -- Store the squared radius for distance checks
-                        end
+        --Check if it has a baseVoxel, otherwise it cant be checked
+        if vehicleInfo.base_voxel ~= nil then
+            --Should be valid, just make sure that you can get its data fine
+            local vehicleMatrix, posSuccess = s.getVehiclePos(vehicle_id)
+            if posSuccess then
+                --Check that its higher than the base altitude to exclude vehicles that cant be targeted by flak
+                local x,y,z = vehicleMatrix[13], vehicleMatrix[14], vehicleMatrix[15]
+                if y > g_savedata.settings.minAlt or not FILTER_GROUND_VEHICLES then
+                    d.startProfile("calculateVehicleVoxelZeroPosition")
+                    local zeroPosSuccess,vehicleZeroPosition = shrapnel.calculateVehicleVoxelZeroPosition(vehicle_id)
+                    d.endProfile("calculateVehicleVoxelZeroPosition")
+                    if zeroPosSuccess then
+                        --This is a valid vehicle. Insert into the tables
+                        local vehicleX, vehicleY, vehicleZ = matrix.positionFast(vehicleMatrix)
+                        table.insert(vehiclesToCheck, vehicle_id)
+                        vehiclePositions[vehicle_id] = {vehicleX, vehicleY, vehicleZ}
+                        vehicleZeroPositions[vehicle_id] = matrixExtras.invert(vehicleZeroPosition)
+                        vehicleColliderRadiuses[vehicle_id] = vehicleInfo.collider_data.radius * vehicleInfo.collider_data.radius -- Store the squared radius for distance checks
                     end
                 end
             end
@@ -81,6 +80,11 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
         return d.printError("Shrapnel", "Failed to tick shrapnel chunk, chunk is nil")
     end
     --d.startProfile("tickShrapnelChunk")
+    --Get nearby vehicles using spatial hash
+    if USE_SPATIAL_HASH then
+        local nearbyVehicles = spatialHash.queryVehiclesInCell(chunk.positionX, chunk.positionY, chunk.positionZ)
+        vehiclesToCheck = nearbyVehicles
+    end
 
     --Pre-decide which vehicles are close enough since they generally wont change between steps, and it wont matter much if it does change
     --d.startProfile("decideVehicles")
@@ -349,6 +353,29 @@ function shrapnel.debugVoxelPositions(vehicle_id, resume_range)
     if z < range then
         taskService:AddTask("debugVoxelPositions", 45, {vehicle_id, z+1})
     end
+end
+
+function shrapnel.vehicleEligableForShrapnel(vehicle_id)
+    local vehicleInfo = g_savedata.vehicleInfo[vehicle_id]
+    if vehicleInfo == nil then
+        return false
+    end
+    if vehicleInfo.needs_setup then
+        return false
+    end
+    if vehicleInfo.collider_data == nil then
+        return false
+    end
+    if vehicleInfo.collider_data.radius == nil or vehicleInfo.collider_data.radius <= 0 then
+        return false
+    end
+    if vehicleInfo.base_voxel == nil then
+        return false
+    end
+    if FILTER_NON_PLAYER_VEHICLES and vehicleInfo.owner == nil then
+        return false
+    end
+    return true
 end
 
 return shrapnel

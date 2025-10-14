@@ -159,7 +159,7 @@ function vehicleInfoManager.completeVehicleSetup(vehicle_id)
 		--The actual stormworks vehicle position is based off center of mass, which we cant calculate
 		--Since we also can only get component positions, add a multiplier to the collider radius to be safe
 		--Wings also usually lack components
-		local MULTIPLIER = 3.0
+		local MULTIPLIER = 2.7
 		local BLOCK_SIZE = 0.25
 		local radius = (math.sqrt(farthestSq)*BLOCK_SIZE) * MULTIPLIER
 		vehicleInfo.collider_data = {
