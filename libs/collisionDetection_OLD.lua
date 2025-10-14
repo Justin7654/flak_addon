@@ -4,6 +4,8 @@
 --- Also should elimate false-negatives with distance checks
 --- 
 --- May not be 100% accurate, uses component data to approximate a bounding box.
+---
+--- Completely non-functional and abandoned
 ---]]]
 
 local collisionDetection = {}

@@ -70,7 +70,7 @@ end
 --- Can only be called while the vehicle is loaded
 function vehicleInfoManager.completeVehicleSetup(vehicle_id)
     if g_savedata.vehicleInfo[vehicle_id] == nil then
-        d.printWarning("completeVehicleSetup was called on ",vehicle_id," but was never initialized!")
+        d.printDebug("completeVehicleSetup was called on ",vehicle_id," but was never initialized!")
         vehicleInfoManager.initNewVehicle(vehicle_id, -1, nil)
     end
 
@@ -120,6 +120,8 @@ function vehicleInfoManager.completeVehicleSetup(vehicle_id)
 			vehicleInfo.base_voxel = {x=closest.x, y=closest.y, z=closest.z}
 		end
 	end
+
+	
 end
 
 --- Deletes the given vehicle info from g_savedata to save unnecessary space

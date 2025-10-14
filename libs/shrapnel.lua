@@ -1,5 +1,4 @@
 taskService = require("libs.script.taskService")
-collisionDetection = require("libs.collisionDetection")
 matrixExtras = require("libs.script.matrixExtras")
 d = require("libs.script.debugging")
 shrapnel = {}
@@ -85,12 +84,21 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
     local futureX = chunk.positionX + chunk.fullVelocityX
     local futureY = chunk.positionY + chunk.fullVelocityY
     local futureZ = chunk.positionZ + chunk.fullVelocityZ
+    local radius = 30
+    local radiusSquared = radius * radius
     for i,vehicle_id in ipairs(vehiclesToCheck) do
         --Check if its more than 25m away from the final position of this tick
         local vehicleMatrix = vehiclePositions[vehicle_id]
         local posX, posY, posZ = vehicleMatrix[1], vehicleMatrix[2], vehicleMatrix[3]
-        if ALWAYS_CHECK_COLLISION_DEBUG or (math.abs(futureX - posX) < 30 and math.abs(futureY - posY) < 30 and math.abs(futureZ - posZ) < 30) then
+        if ALWAYS_CHECK_COLLISION_DEBUG then
             table.insert(finalVehicles, vehicle_id)
+        else
+            local dx = futureX - posX
+            local dy = futureY - posY
+            local dz = futureZ - posZ
+            if (dx*dx + dy*dy + dz*dz) < radiusSquared then
+                table.insert(finalVehicles, vehicle_id)
+            end
         end
     end
     --d.endProfile("decideVehicles")

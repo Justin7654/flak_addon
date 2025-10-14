@@ -13,7 +13,6 @@ flakMain = require("libs.flakMain")
 taskService = require("libs.script.taskService")
 aiming = require("libs.ai.aiming")
 shrapnel = require("libs.shrapnel")
-collisionDetection = require("libs.collisionDetection")
 vehicleInfoManager = require("libs.vehicleInfoManager")
 
 -- Data
@@ -147,22 +146,6 @@ function onTick(game_ticks)
 			end
 		end
 	end
-
-	--[[
-	for i, vehicle_id in pairs(g_savedata.loadedVehicles) do
-		local vehicleInfo = g_savedata.vehicleInfo[vehicle_id]
-		local isSetup, vehicleInfo = isVehicleDataSetup(vehicleInfo)
-		if isSetup and vehicleInfo.collider_data.aabb then
-			--Update collider data
-			local playerPosition = s.getPlayerPos(0)
-			local x,y,z = matrix.position(playerPosition)
-			if collisionDetection.isPointInsideAABB(vehicleInfo.collider_data.aabb, x, y, z) then
-				d.printDebug("Player is inside vehicle ",vehicle_id)
-			else
-				d.printDebug("Player is not inside vehicle ",vehicle_id)
-			end
-		end
-	end]]
 	
 	sanity.idleCheck()
 	taskService:handleTasks()
@@ -369,16 +352,31 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		shrapnel.debugVoxelPositions(tostring(args[1]))
 	elseif command == "bench" then
 		local vehicle_id = tonumber(args[1])
-		local runTimes = 200*1000
+		local runTimes = 700*1000
 		local testMatrix = s.getVehiclePos(vehicle_id)
 		local start1 = s.getTimeMillisec()
 		for i=1, runTimes do
-			s.getVehiclePos(vehicle_id)
+			math.randomseed(i)
+			local futureX, futureY, futureZ = math.random(-9000,9000), math.random(-100,100), math.random(-9000,9000)
+			local posX, posY, posZ = futureX+math.random(-80,80), futureY+math.random(-80,80), futureZ+math.random(-80,80)
+			if math.abs(futureX - posX) < 30 and math.abs(futureY - posY) < 30 and math.abs(futureZ - posZ) < 30 then
+				-- Do nothing
+			end
 		end
 		local end1 = s.getTimeMillisec()
+		local radius = 30
+    	local radiusSq = radius * radius
 		local start2 = s.getTimeMillisec()
 		for i=1, runTimes do
-			matrix.multiplyXYZW(testMatrix, 1, 5, 2, 1)
+			math.randomseed(i)
+			local futureX, futureY, futureZ = math.random(-9000,9000), math.random(-100,100), math.random(-9000,9000)
+			local posX, posY, posZ = futureX+math.random(-80,80), futureY+math.random(-80,80), futureZ+math.random(-80,80)
+			local dx = futureX - posX
+            local dy = futureY - posY
+            local dz = futureZ - posZ
+			if (dx*dx + dy*dy + dz*dz) < radiusSq then
+				-- Do nothing
+			end
 		end
 		local end2 = s.getTimeMillisec()
 		local time1 = (end1 - start1)/runTimes
