@@ -97,6 +97,7 @@ function spatialHash.removeVehicleFromGrid(vehicle_id)
 	if largeVehicles[vehicle_id] then
 		largeVehicles[vehicle_id] = nil
 		vehicleCellRanges[vehicle_id] = nil
+		d.printDebug("Removed large vehicle ",vehicle_id," from spatial hash")
 		return
 	end
 	local cells = vehicleCells[vehicle_id]
@@ -194,9 +195,22 @@ function spatialHash.queryVehiclesNearPoint(x,y,z, queryRadius)
 end
 
 -- Directly accesses a cell for if you only need 1 point. Way faster than queryVehiclesNearPoint
+spatialHash.queryCache = {}
 function spatialHash.queryVehiclesInCell(x,y,z)
+	-- Directly access cell contents
 	local cellID = cellKey(posToCell(x), posToCell(y), posToCell(z))
-	return grid[cellID] or {}
+	local cacheResult = spatialHash.queryCache[cellID]
+	if cacheResult then
+		return cacheResult
+	end
+	local cellContents = grid[cellID] or {}
+	-- Add large vehicles
+	-- Needed to add result caching for this, a single large vehicle made this super slow and caching fixed it
+	for vid,_ in pairs(largeVehicles) do
+		cellContents[#cellContents+1] = vid
+	end
+	spatialHash.queryCache[cellID] = cellContents
+	return cellContents
 end
 
 -- Clears the entire spatial hash grid

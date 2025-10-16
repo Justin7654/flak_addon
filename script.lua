@@ -26,7 +26,7 @@ g_savedata = {
 		fireRate = property.slider("Flak Fire Rate (seconds between shots)", 1, 20, 1, 4),
 		minAlt = property.slider("Minimum Fire Altitude Base", 100, 700, 50, 200),
 		flakAccuracyMult = property.slider("Flak Accuracy Multiplier", 0.5, 1.5, 0.1, 1),
-		shrapnelSubSteps = property.slider("(ADVANCED) Shrapnel simulation substeps (multiplies performance impact for better collision detection)", 1, 4, 1, 3),
+		shrapnelSubSteps = property.slider("(ADVANCED) Shrapnel simulation substeps (multiplies performance impact for better collision detection)", 3, 7, 1, 5),
 		shrapnelBombSkipping = true
 	},
 	fun = {
@@ -85,7 +85,7 @@ m = matrix
 
 matrix.emptyMatrix = matrix.translation(0,0,0)
 
-spatialHash.init(20, 400)
+spatialHash.init(20, 500)
 
 function onCreate(is_world_create)
 	if is_world_create then
@@ -97,22 +97,6 @@ end
 function onTick(game_ticks)
 	--s.announce("[]", g_savedata.tickCounter)
     g_savedata.tickCounter = g_savedata.tickCounter + 1
-
-	--Update the spatial hash grid for loaded vehicles
-	for i, vehicle_id in ipairs(g_savedata.loadedVehicles) do
-		if isTickID(i, 2) then
-			--d.printDebug("Updating spatial hash for vehicle ",vehicle_id)
-			if shrapnel.vehicleEligableForShrapnel(vehicle_id) then
-				local pos = s.getVehiclePos(vehicle_id)
-				local vehicleInfo = g_savedata.vehicleInfo[vehicle_id]
-				if vehicleInfo then
-					local radius = vehicleInfo.collider_data.radius
-					local bounds = spatialHash.boundsFromCenterRadius(pos[13], pos[14], pos[15], radius)
-					spatialHash.updateVehicleInGrid(vehicle_id, bounds)
-				end
-			end
-		end
-	end
 
 	--Loop through all flak once every 10 seconds and if they are targeting a player higher than 150m then
 	local updateRate = time.second

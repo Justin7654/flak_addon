@@ -91,7 +91,13 @@ function vehicleInfoManager.completeVehicleSetup(vehicle_id)
 	vehicleInfo.mass = loadedVehicleData.mass
 	vehicleInfo.voxels = loadedVehicleData.voxels
 	vehicleInfo.needs_setup = false
-    
+
+	--Decide if to process this vehicle for shrapnel based on if it has any tags (no tags mean its likely player spawned)
+	--This will allow players to spawn in
+	if vehicleInfo.owner == -1 and vehicleInfo.vehicle_data.tags_full ~= "" then
+		return
+	end
+
 	--Setup base voxel data
     local voxel_exists = s.addDamage(vehicle_id, 0, 0, 0, 0, 0) --Same as checkVoxelExists in shrapnel.lua
 	if voxel_exists then
@@ -125,8 +131,19 @@ function vehicleInfoManager.completeVehicleSetup(vehicle_id)
 	end
 
 	-- Compute a bounding sphere using the center of the components' bounding box.
-	if #allComponents == 0 then
-		d.printDebug("Unable to compute collider data for vehicle ",vehicle_id," because it has no components")
+	if #allComponents < 2 then
+		d.printDebug("Computing collider data for vehicle ",vehicle_id," with ",#allComponents," components using voxel count")
+		--base it off the voxel count
+		--calculate the radius of a filled cube with this many voxels
+		local BLOCK_SIZE = 0.25
+		local MULTIPLIER = 3
+		local diameter = (vehicleInfo.voxels)^(1/3) * BLOCK_SIZE --Calculates the diameter of how big a cube would be filled with this many voxels
+		local radius = diameter/2 -- radius is half the diameter
+		local scaledRadius = radius * MULTIPLIER --Scale it up since its not really a filled cube, its hallow and possibly a rectangle
+		vehicleInfo.collider_data = {
+			radius = math.max(scaledRadius, 4),
+		}
+		d.printDebug(vehicleInfo.voxels)
 	else
 		local minX, minY, minZ = math.huge, math.huge, math.huge
 		local maxX, maxY, maxZ = -math.huge, -math.huge, -math.huge
@@ -159,7 +176,7 @@ function vehicleInfoManager.completeVehicleSetup(vehicle_id)
 		--The actual stormworks vehicle position is based off center of mass, which we cant calculate
 		--Since we also can only get component positions, add a multiplier to the collider radius to be safe
 		--Wings also usually lack components
-		local MULTIPLIER = 2.7
+		local MULTIPLIER = 2.5
 		local BLOCK_SIZE = 0.25
 		local radius = (math.sqrt(farthestSq)*BLOCK_SIZE) * MULTIPLIER
 		vehicleInfo.collider_data = {

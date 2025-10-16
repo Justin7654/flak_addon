@@ -7,11 +7,14 @@ shrapnel = {}
 -- Performance tracking excel sheet:https://1drv.ms/x/c/5e0eec0b38cb0474/EWqWCGP-O2VOr-6FV9Qp3EIBIXUpqVqg8FAa8HjlWxKk2g?e=Z7Dj0n
 
 local FILTER_GROUND_VEHICLES = false
-local FILTER_NON_PLAYER_VEHICLES = false
 local SKIP_TICK_ALL_IF_NO_SHRAPNEL = true
 local ALWAYS_CHECK_COLLISION_DEBUG = false
 local DONT_DESTROY_ON_HIT_DEBUG = false
-local USE_SPATIAL_HASH = false
+local USE_SPATIAL_HASH = true
+
+cachedVehiclePositions = {}
+cachedZeroPositions = {}
+cachedColliderRadiuses = {}
 
 --- Ticks all shrapnel objects
 --- Made to replace the system of using task service to loop it, since that is slow, and makes some optimizations impossible or complicated
@@ -22,45 +25,64 @@ function shrapnel.tickAll()
     end
     d.startProfile("tickAllShrapnel")
 
-    -- Decide the vehicles the each shrapnel will check, to minimize the checks needed to be done by each individual shrapnel
-    d.startProfile("tickAll:decideVehicles")
     local vehicleInfoTable = g_savedata.vehicleInfo
     local vehiclesToCheck = {}
     local vehiclePositions = {}
     local vehicleZeroPositions = {}
     local vehicleColliderRadiuses = {}
-    for _,vehicle_id in ipairs(g_savedata.loadedVehicles) do
-        --Check if the vehicle is owned by a player so we dont waste time checking AI vehicles or static vehicles
-        local vehicleInfo = vehicleInfoTable[vehicle_id]
-        if vehicleInfo  == nil then
-            d.printError("Vehicle info is nil for vehicle ",vehicle_id,". Applying emergency rough data fix to prevent error\n"..SSSWTOOL_SRC_FILE, " line:", SSSWTOOL_SRC_LINE)
-            --Recover from a error
-            vehicleInfo = {owner = -1}
-        end
-        --Check if it has a baseVoxel, otherwise it cant be checked
-        if vehicleInfo.base_voxel ~= nil then
-            --Should be valid, just make sure that you can get its data fine
-            local vehicleMatrix, posSuccess = s.getVehiclePos(vehicle_id)
-            if posSuccess then
-                --Check that its higher than the base altitude to exclude vehicles that cant be targeted by flak
-                local x,y,z = vehicleMatrix[13], vehicleMatrix[14], vehicleMatrix[15]
-                if y > g_savedata.settings.minAlt or not FILTER_GROUND_VEHICLES then
-                    d.startProfile("calculateVehicleVoxelZeroPosition")
-                    local zeroPosSuccess,vehicleZeroPosition = shrapnel.calculateVehicleVoxelZeroPosition(vehicle_id)
-                    d.endProfile("calculateVehicleVoxelZeroPosition")
-                    if zeroPosSuccess then
-                        --This is a valid vehicle. Insert into the tables
-                        local vehicleX, vehicleY, vehicleZ = matrix.positionFast(vehicleMatrix)
-                        table.insert(vehiclesToCheck, vehicle_id)
-                        vehiclePositions[vehicle_id] = {vehicleX, vehicleY, vehicleZ}
-                        vehicleZeroPositions[vehicle_id] = matrixExtras.invert(vehicleZeroPosition)
-                        vehicleColliderRadiuses[vehicle_id] = vehicleInfo.collider_data.radius * vehicleInfo.collider_data.radius -- Store the squared radius for distance checks
+    if USE_SPATIAL_HASH then
+        cachedVehiclePositions = {}
+        cachedZeroPositions = {}
+        cachedColliderRadiuses = {}
+        spatialHash.queryCache = {}
+        UPDATE_RATE = 1
+        --Update the spatial hash grid for loaded vehicles
+	    for i, vehicle_id in ipairs(g_savedata.loadedVehicles) do
+	    	if isTickID(i, UPDATE_RATE) then
+	    		--d.printDebug("Updating spatial hash for vehicle ",vehicle_id)
+	    		if shrapnel.vehicleEligableForShrapnel(vehicle_id) then
+	    			local pos = s.getVehiclePos(vehicle_id)
+	    			local vehicleInfo = g_savedata.vehicleInfo[vehicle_id]
+	    			local radius = vehicleInfo.collider_data.radius
+	    			local bounds = spatialHash.boundsFromCenterRadius(pos[13], pos[14], pos[15], radius)
+	    			spatialHash.updateVehicleInGrid(vehicle_id, bounds)
+	    		end
+	    	end
+	    end
+    else
+        -- Decide the vehicles the each shrapnel will check, to minimize the checks needed to be done by each individual shrapnel
+        for _,vehicle_id in ipairs(g_savedata.loadedVehicles) do
+            --Check if the vehicle is owned by a player so we dont waste time checking AI vehicles or static vehicles
+            local vehicleInfo = vehicleInfoTable[vehicle_id]
+            if vehicleInfo  == nil then
+                d.printError("Vehicle info is nil for vehicle ",vehicle_id,". Applying emergency rough data fix to prevent error\n"..SSSWTOOL_SRC_FILE, " line:", SSSWTOOL_SRC_LINE)
+                --Recover from a error
+                vehicleInfo = {owner = -1}
+            end
+            --Check if it has a baseVoxel, otherwise it cant be checked
+            if vehicleInfo.base_voxel ~= nil then
+                --Should be valid, just make sure that you can get its data fine
+                local vehicleMatrix, posSuccess = s.getVehiclePos(vehicle_id)
+                if posSuccess then
+                    --Check that its higher than the base altitude to exclude vehicles that cant be targeted by flak
+                    local x,y,z = vehicleMatrix[13], vehicleMatrix[14], vehicleMatrix[15]
+                    if y > g_savedata.settings.minAlt or not FILTER_GROUND_VEHICLES then
+                        d.startProfile("calculateVehicleVoxelZeroPosition")
+                        local zeroPosSuccess,vehicleZeroPosition = shrapnel.calculateVehicleVoxelZeroPosition(vehicle_id)
+                        d.endProfile("calculateVehicleVoxelZeroPosition")
+                        if zeroPosSuccess then
+                            --This is a valid vehicle. Insert into the tables
+                            local vehicleX, vehicleY, vehicleZ = matrix.positionFast(vehicleMatrix)
+                            table.insert(vehiclesToCheck, vehicle_id)
+                            vehiclePositions[vehicle_id] = {vehicleX, vehicleY, vehicleZ}
+                            vehicleZeroPositions[vehicle_id] = matrixExtras.invert(vehicleZeroPosition)
+                            vehicleColliderRadiuses[vehicle_id] = vehicleInfo.collider_data.radius * vehicleInfo.collider_data.radius -- Store the squared radius for distance checks
+                        end
                     end
                 end
             end
         end
     end
-    d.endProfile("tickAll:decideVehicles")
 
     -- Go through all the shrapnel chunks and tick them
     for _, chunk in pairs(g_savedata.shrapnelChunks) do
@@ -82,12 +104,54 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
     --d.startProfile("tickShrapnelChunk")
     --Get nearby vehicles using spatial hash
     if USE_SPATIAL_HASH then
+        --Use spatial hashing to get the nearby vehicles
         local nearbyVehicles = spatialHash.queryVehiclesInCell(chunk.positionX, chunk.positionY, chunk.positionZ)
         vehiclesToCheck = nearbyVehicles
+
+        --Get the needed data for each vehicle
+        for _, vehicle in pairs(vehiclesToCheck) do
+            -- Get the vehicle positions
+            if cachedVehiclePositions[vehicle] == nil then
+                -- If this vehicle hasn't been encountered yet, get its position
+                local vehicleMatrix, posSuccess = s.getVehiclePos(vehicle)
+                if posSuccess then
+                    cachedVehiclePositions[vehicle] = {matrix.positionFast(vehicleMatrix)}
+                else
+                    cachedVehiclePositions[vehicle] = {0,0,0}
+                    d.printWarning("line_", SSSWTOOL_SRC_LINE,": Shrapnel chunk failed to get vehicle position for vehicle ",vehicle)
+                end
+            end
+            vehiclePositions[vehicle] = cachedVehiclePositions[vehicle]
+            
+            -- Get the vehicle zero positions
+            if cachedZeroPositions[vehicle] == nil then
+                -- If this vehicle hasn't been encountered yet, calculate its zero position
+                local zeroPosSuccess,vehicleZeroPosition = shrapnel.calculateVehicleVoxelZeroPosition(vehicle)
+                if zeroPosSuccess then
+                    cachedZeroPositions[vehicle] = matrixExtras.invert(vehicleZeroPosition)
+                else
+                    cachedZeroPositions[vehicle] = matrix.translation(0,0,0)
+                    d.printWarning("line_", SSSWTOOL_SRC_LINE,": Shrapnel chunk failed to get vehicle zero position for vehicle ",vehicle)
+                end
+            end
+            vehicleZeroPositions[vehicle] = cachedZeroPositions[vehicle]
+
+            -- Get the vehicle collider radius
+            if cachedColliderRadiuses[vehicle] == nil then
+                -- If this vehicle hasn't been encountered yet, get its collider radius
+                local vehicleInfo = g_savedata.vehicleInfo[vehicle]
+                if vehicleInfo and vehicleInfo.collider_data and vehicleInfo.collider_data.radius then
+                    cachedColliderRadiuses[vehicle] = vehicleInfo.collider_data.radius * vehicleInfo.collider_data.radius
+                else
+                    cachedColliderRadiuses[vehicle] = 0
+                    d.printWarning("line_", SSSWTOOL_SRC_LINE,": Shrapnel chunk failed to get vehicle collider radius for vehicle ",vehicle)
+                end
+            end
+            vehicleColliderRadiuses[vehicle] = cachedColliderRadiuses[vehicle]
+        end
     end
 
     --Pre-decide which vehicles are close enough since they generally wont change between steps, and it wont matter much if it does change
-    --d.startProfile("decideVehicles")
     local finalVehicles = {}
     local futureX = chunk.positionX + chunk.fullVelocityX
     local futureY = chunk.positionY + chunk.fullVelocityY
@@ -107,7 +171,6 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
             end
         end
     end
-    --d.endProfile("decideVehicles")
 
     --Start stepping the position and checking if its hit anything
     local hit = false
@@ -182,7 +245,7 @@ end
 --- @param sourcePos SWMatrix The position to spawn the shrapnel at
 --- @param shrapnelAmount number The amount of shrapnel to spawn
 function shrapnel.explosion(sourcePos, shrapnelAmount)
-    local SHRAPNEL_SPEED = 120 --95
+    local SHRAPNEL_SPEED = 150 --120 --95
     --Cache some globals as locals
     local random = math.random
     local sin = math.sin
@@ -370,9 +433,6 @@ function shrapnel.vehicleEligableForShrapnel(vehicle_id)
         return false
     end
     if vehicleInfo.base_voxel == nil then
-        return false
-    end
-    if FILTER_NON_PLAYER_VEHICLES and vehicleInfo.owner == nil then
         return false
     end
     return true

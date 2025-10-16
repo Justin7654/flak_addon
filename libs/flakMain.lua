@@ -265,7 +265,7 @@ function flakMain.flakExplosion(explosionData)
     position = explosionData.position
     d.printDebug("Explosion is at ",s.getTile(position).name," as magnitude ",magnitude)
     s.spawnExplosion(position, magnitude)
-    shrapnel.explosion(position,25)
+    shrapnel.explosion(position,35)
 end
 
 return flakMain
