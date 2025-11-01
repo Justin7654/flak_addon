@@ -18,10 +18,11 @@ cachedColliderRadiuses = {}
 
 --- Ticks all shrapnel objects
 --- Made to replace the system of using task service to loop it, since that is slow, and makes some optimizations impossible or complicated
+--- @return boolean skipped If it was skipped due to there being no shrapnel
 function shrapnel.tickAll()
     -- Dont do anything if theres no shrapnel
     if util.getTableLength(g_savedata.shrapnelChunks) == 0 and SKIP_TICK_ALL_IF_NO_SHRAPNEL then
-        return
+        return true
     end
     d.startProfile("tickAllShrapnel")
 
@@ -313,7 +314,7 @@ end
 --- @return number voxelX the x voxel position
 --- @return number voxelY the y voxel position
 --- @return number voxelZ the z voxel position
-function shrapnel.getVehicleVoxelAtWorldPosition(vehicle_id, position, vehicleZeroPos, amount, radius)
+function shrapnel.getVehicleVoxelAtWorldPosition(vehicle_id, position, vehicleZeroPos)
     ---[[[
     --- In Depth Explanation:
     ---  1. its gets the baseVoxel (the closest voxel to 0,0,0 which exists)
@@ -379,7 +380,7 @@ function shrapnel.calculateVehicleVoxelZeroPosition(vehicle_id)
 end
 
 function shrapnel.damageVehicleAtWorldPosition(vehicle_id, position, zeroPosition, amount, radius)
-    local success, voxelX, voxelY, voxelZ = shrapnel.getVehicleVoxelAtWorldPosition(vehicle_id, position, zeroPosition, amount, radius)
+    local success, voxelX, voxelY, voxelZ = shrapnel.getVehicleVoxelAtWorldPosition(vehicle_id, position, zeroPosition)
     if success then
         return s.addDamage(vehicle_id, amount, voxelX, voxelY, voxelZ, radius)
     end

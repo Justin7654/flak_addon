@@ -15,6 +15,7 @@ aiming = require("libs.ai.aiming")
 shrapnel = require("libs.shrapnel")
 vehicleInfoManager = require("libs.vehicleInfoManager")
 spatialHash = require("libs.spatialHash")
+boundsScanner = require("libs.boundsScanner")
 
 -- Data
 g_savedata = {
@@ -51,6 +52,7 @@ g_savedata = {
 		bounds = false,
 		detected_bombs = false,
 		hash = false,
+		scan = false
 	},
 	tasks = {}, --List of all tasks
 	taskCurrentID = 0, --The current ID for tasks
@@ -60,6 +62,7 @@ g_savedata = {
 	debugVoxelMaps = {}, --Used by debugging voxel positions. Vehicle IDS
 	shrapnelChunks = {}, ---@type table<number, shrapnelChunk> A list of every active shrapnel object indexed by its ID
 	shrapnelCurrentID = 0,
+	vehicleBoundScans = {}, ---@type vehicleBoundsScanState[]
 }
 
 --- @alias callbackID "freeDebugLabel" | "setPopup" | "flakExplosion" | "tickShrapnelChunk" | "debugVoxelPositions"
@@ -138,7 +141,12 @@ function onTick(game_ticks)
 	end
 
 	--Tick shrapnel
-	shrapnel:tickAll()
+	local shrapnelSkipped = shrapnel:tickAll()
+
+	--Tick bounds scanning
+	if shrapnelSkipped then
+		boundsScanner.tick()
+	end
 	
 	--Fun Events
 	if g_savedata.fun.noPlayerIsSafe.active then
@@ -190,6 +198,14 @@ function onVehicleLoad(vehicle_id)
 		local bounds = spatialHash.boundsFromCenterRadius(pos[13], pos[14], pos[15], radius)
 		spatialHash.addVehicleToGrid(vehicle_id, bounds)
 	end
+
+	--Start scanning its bounds
+	isScanning, isPaused = boundsScanner.isScanningVehicle(vehicle_id)
+	if not isScanning then
+		boundsScanner.startScanForVehicle(vehicle_id)
+	elseif isPaused then
+		boundsScanner.resumeScanForVehicle(vehicle_id)
+	end
 end
 
 function onVehicleSpawn(vehicle_id, peer_id, x, y, z, group_cost, group_id)
@@ -221,6 +237,12 @@ function onVehicleUnload(vehicle_id)
 
 	--Remove from spatial hash grid
 	spatialHash.removeVehicleFromGrid(vehicle_id)
+
+	--Pause bounds scanning
+	isScanning, isPaused = boundsScanner.isScanningVehicle(vehicle_id)
+	if isScanning and not isPaused then
+		boundsScanner.pauseScanForVehicle(vehicle_id)
+	end
 end
 
 function onVehicleDespawn(vehicle_id)
@@ -236,6 +258,11 @@ function onVehicleDespawn(vehicle_id)
 	vehicleInfoManager.cleanVehicleData(vehicle_id)
 	--Remove from spatial hash grid
 	spatialHash.removeVehicleFromGrid(vehicle_id)
+	--Stop scanning if its still scanning
+	isScanning, isPaused = boundsScanner.isScanningVehicle(vehicle_id)
+	if isScanning then
+		boundsScanner.stopScanForVehicle(vehicle_id)
+	end
 	--Add to despawned list to avoid weird issues with onVehicleUnload being called after this
 	despawnedVehicleList[vehicle_id] = true
 end
@@ -268,6 +295,7 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 	elseif command == "sanity" then
 		sanity.checkAll()
 	elseif command == "event" then
+		--TODO: Fix 
 		if string.lower(args[1]) == "noplayerissafe" then
 			g_savedata.fun.noPlayerIsSafe.active = not g_savedata.fun.noPlayerIsSafe.active
 			if g_savedata.fun.noPlayerIsSafe.active then
