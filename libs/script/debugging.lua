@@ -1,7 +1,7 @@
 --[[
   Handles debugging of the addon
 --]]
-
+local spatialHash = require("libs.spatialHash") --Spatial hash uses the global d variable to use debugging.lua, so no require loop happens
 
 debugging = {}
 
@@ -20,11 +20,13 @@ function debugging.tickDebugs()
         end
         server.setPopupScreen(-1, g_savedata.taskDebugUI, "", true, taskDebugText, 0.6, 0)
     elseif g_savedata.taskDebugUI then
+        --TODO: Rework this, this is running constantly when task debug is off
         --server.setPopupScreen(-1, g_savedata.taskDebugUI, "", false, "", 0.6, 0)
         server.removePopup(-1, g_savedata.taskDebugUI)
     end
 
-    if g_savedata.debug.bounds and isTickID(0, 20) then
+    local BOUNDS_UPDATE_RATE = 20
+    if g_savedata.debug.bounds and isTickID(0, BOUNDS_UPDATE_RATE) then
         for _, vehicle_id in pairs(g_savedata.loadedVehicles) do
             local info = g_savedata.vehicleInfo[vehicle_id]
 			if info and info.collider_data and info.collider_data.radius then
@@ -39,9 +41,7 @@ function debugging.tickDebugs()
                     roundedDist = math.floor(dist / 0.1 + 0.5) * 0.1
                     roundedRadius = math.floor(info.collider_data.radius / 0.1 + 0.5) * 0.1
 					text = "Within collider radius ("..roundedDist.." / ".. roundedRadius..")"
-					d.debugLabel("bounds", vehiclePos, text, 20, 200)
-				else
-					--d.debugLabel("none", vehiclePos, "Outside collider radius ("..math.sqrt(distSq)..">"..info.collider_data.radius..")", 3*time.second)
+					d.debugLabel("bounds", vehiclePos, text, BOUNDS_UPDATE_RATE, 200)
 				end
 			end
 		end
@@ -54,6 +54,118 @@ function debugging.tickDebugs()
             local playerBounds = spatialHash.boundsFromCenterRadius(pos[13], pos[14], pos[15], 0.1)
             local playerCell = spatialHash._getCellRangeForBounds(playerBounds)
             d.printDebug("Player ",player_id.id," (in ",playerCell,") found ",count," vehicles nearby: ",vehicles)
+        end
+    end
+
+    if g_savedata.debug.scan then
+        if g_savedata.debugBoundsScanState == -1 then
+            -- Display a GUI showing the overall status
+            -- Generate the text
+            local scanDebugText = ""
+            local header = "?flak viewscan {id} to view details\n"
+            local pausedScans = 0
+            local activeScans = 0
+            local optionsText = "Active Scans:\n"
+            for i, scanState in pairs(g_savedata.vehicleBoundScans) do
+                if scanState.paused then
+                    pausedScans = pausedScans + 1
+                else
+                    activeScans = activeScans + 1
+                    -- Limit the amount so it doesn't go off the screen
+                    if activeScans <= 7 then
+                        minutesSinceStart = tostring(math.floor((g_savedata.tickCounter - scanState.start_tick) / (time.minute)))
+                        optionsText = optionsText.."\nScan "..tostring(math.floor(scanState.scan_id)).."\n"
+                        optionsText = optionsText..minutesSinceStart.."m old\n"
+                        optionsText = optionsText.."Radius: "..tostring(scanState.current_radius).."\n"
+                    end
+                end
+            end
+            if activeScans > 7 then
+                optionsText = optionsText.."\n... "..(activeScans-5).." more active scans\n"
+            end
+            header = header.."Active: "..tostring(activeScans).."\nPaused: "..tostring(pausedScans).."\n"
+            scanDebugText = header..optionsText
+            server.setPopupScreen(-1, g_savedata.debugBoundScanUI, "", true, scanDebugText, 0.8, 0)
+            --Clean debug bound labels
+            if g_savedata.debugBoundScanLabelUI then
+                for _, ui_id in pairs(g_savedata.debugBoundScanLabelUI) do
+                    d.freeDebugLabel(-1, ui_id)
+                end
+                g_savedata.debugBoundScanLabelUI = nil
+            end
+        else
+            --Instead show the details for a specific scan
+            --Find the scan
+            local found = false
+            for i, scanState in pairs(g_savedata.vehicleBoundScans) do
+                if scanState.scan_id == g_savedata.debugBoundsScanState then
+                    --Generate the text
+                    local scanDebugText = "To exit, type ?flak viewscan\n\n"
+                    scanDebugText = scanDebugText..tostring(scanState.scan_id).."\n"
+                    --Display paused or unpaused
+                    scanDebugText = scanDebugText..(scanState.paused and "Paused\n" or "Active\n")
+                    scanDebugText = scanDebugText.."Vehicle ID: "..tostring(scanState.vehicle_id).."\n"
+                    scanDebugText = scanDebugText.."Center Voxel: {"..tostring(scanState.center_voxel[1])..","..tostring(scanState.center_voxel[2])..","..tostring(scanState.center_voxel[3]).."}\n"
+                    scanDebugText = scanDebugText.."Radius: "..tostring(scanState.current_radius).."\n"
+                    scanDebugText = scanDebugText.."Last Successful Radius: "..tostring(scanState.last_successful_radius).."\n"
+                    scanDebugText = scanDebugText.."Best SqDist: "..tostring(scanState.best_sqdist).."\n"
+                    --Add labels around the vehicle showing the current obb bounds
+                    if scanState.best_bounds then
+                        --Get where to put the labels
+                        local vehiclePos = s.getVehiclePos(scanState.vehicle_id)
+                        local worldBounds = spatialHash.boundsFromOBB(vehiclePos, scanState.best_bounds)
+                        --[[
+                        local corners = {
+                            {minX, minY, minZ},
+                            {maxX, maxY, maxZ}
+                        }
+                        --]]
+                        local corners = spatialHash.debugBounds(worldBounds, 6)
+                        local numCorners = #corners
+                        --Get the UI IDs
+                        if g_savedata.debugBoundScanLabelUI == nil then
+                            g_savedata.debugBoundScanLabelUI = {}
+                        end
+                        while #g_savedata.debugBoundScanLabelUI > numCorners do
+                            local ui_id = table.remove(g_savedata.debugBoundScanLabelUI)
+                            d.freeDebugLabel(-1, ui_id)
+                        end
+                        while #g_savedata.debugBoundScanLabelUI < numCorners do
+                            table.insert(g_savedata.debugBoundScanLabelUI, d.getDebugLabelID())
+                        end
+                        --Place each corner
+                        for x, corner in pairs(corners) do
+                            local ui_id = g_savedata.debugBoundScanLabelUI[x]
+                            server.setPopup(-1, ui_id, "", true, "-----------", corner[1], corner[2], corner[3], 1500)
+                        end
+                        -- Also add if if the player is standing inside
+                        local playerPos = s.getPlayerPos(0)
+                        local isInBounds = spatialHash.pointInBounds(playerPos[13], playerPos[14], playerPos[15], worldBounds)
+                        if isInBounds then
+                            scanDebugText = scanDebugText.."Player is inside bounds\n"
+                        else
+                            scanDebugText = scanDebugText.."Player is outside bounds\n"
+                        end
+                    end
+
+                    server.setPopupScreen(-1, g_savedata.debugBoundScanUI, "", true, scanDebugText, 0.6, 0)
+                    found=true
+                    break
+                end
+            end
+            --If scan wasn't found, reset instead of freezing and doing nothing
+            if not found then
+                g_savedata.debugBoundsScanState = -1
+            end
+        end
+    else
+        server.removePopup(-1, g_savedata.debugBoundScanUI)
+        --Clean debug bound labels
+        if g_savedata.debugBoundScanLabelUI then
+            for _, ui_id in pairs(g_savedata.debugBoundScanLabelUI) do
+                d.freeDebugLabel(-1, ui_id)
+            end
+            g_savedata.debugBoundScanLabelUI = nil
         end
     end
 end
@@ -86,6 +198,14 @@ function debugging.debugLabel(debugMode, position, text, length, renderDistance)
     server.setPopup(-1, ui_id, "", true, text, x,y,z, renderDistance)
     taskService:AddTask("freeDebugLabel", length, {-1, ui_id})
     return ui_id
+end
+
+function debugging.getDebugLabelID()
+    if #g_savedata.debugLabelUI > 0 then
+        return table.remove(g_savedata.debugLabelUI)
+    else
+        return s.getMapID()
+    end
 end
 
 function debugging.freeDebugLabel(peer_id, ui_id)

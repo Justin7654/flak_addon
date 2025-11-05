@@ -108,7 +108,6 @@ function spatialHash.addVehicleToGrid(vehicle_id, bounds)
 			end
 		end
 	end
-    d.printDebug("Added vehicle ",vehicle_id," to spatial hash in ",count," cells")
 	vehicleCells[vehicle_id] = cells
 	vehicleCellRanges[vehicle_id] = { cx1,cy1,cz1, cx2,cy2,cz2 }
 end
@@ -232,14 +231,21 @@ function spatialHash.queryVehiclesInCell(x,y,z)
 	if cacheResult then
 		return cacheResult
 	end
-	local cellContents = grid[cellID] or {}
-	-- Add large vehicles
-	-- Needed to add result caching for this, a single large vehicle made this super slow and caching fixed it
-	for vid,_ in pairs(largeVehicles) do
-		cellContents[#cellContents+1] = vid
+	local cellContents = grid[cellID]
+	-- Copy everything in the cell to a new list so the output isn't mutable
+	--(which would also cause issues with adding large vehicles to the output)
+	local out = {}
+	if cellContents then
+		for i=1, #cellContents do
+			out[i] = cellContents[i]
+		end
 	end
-	spatialHash.queryCache[cellID] = cellContents
-	return cellContents
+	-- Add large vehicles
+	for vid,_ in pairs(largeVehicles) do
+		out[#out+1] = vid
+	end
+	spatialHash.queryCache[cellID] = out
+	return out
 end
 
 --- Clears the entire spatial hash grid
@@ -265,9 +271,23 @@ function spatialHash.boundsFromCenterRadius(cx,cy,cz, radius)
 	}
 end
 
+--- point-in-AABB test
+--- @param x number
+--- @param y number
+--- @param z number
+--- @param b bounds
+--- @return boolean is_inside
+function spatialHash.pointInBounds(x,y,z,b)
+	local minX, minY, minZ = b.minX, b.minY, b.minZ
+	if x < minX or y < minY or z < minZ then return false end
+	local maxX, maxY, maxZ = b.maxX, b.maxY, b.maxZ
+	if x > maxX or y > maxY or z > maxZ then return false end
+	return true
+end
+
 --- Computes a world-space AABB from a object-oriented bounding box (OBB)
 --- transforms the local AABB center and expands by |R|*halfExtents.
---- @param transform SWMatrix the vehicle/world transform matrix (Stormworks 4x4)
+--- @param transform SWMatrix the vehicle/world transform matrix from s.getVehiclePos
 --- @param obb obb the object-oriented bounding box
 --- @return bounds worldAABB a world-space axis-aligned bounding box table {minX,minY,minZ,maxX,maxY,maxZ}
 function spatialHash.boundsFromOBB(transform, obb)
@@ -302,6 +322,68 @@ function spatialHash.boundsFromOBB(transform, obb)
 		maxY = wcy + why,
 		maxZ = wcz + whz,
 	}
+end
+
+--- outputs points which when drawn will make a outline visualizing the bounds
+--- @param bounds bounds
+--- @param step number the seperation between each point
+function spatialHash.debugBounds(bounds, step)
+	-- Returns an array of points along the 12 edges of the AABB
+	local pts = {}
+	step = (step and step > 0) and step or 2
+
+	local function push(x,y,z)
+		pts[#pts+1] = {x,y,z}
+	end
+
+	local function drawLine(x1,y1,z1, x2,y2,z2)
+		-- Outputs points from (x1,y1,z1) to (x2,y2,z2)
+		local dx,dy,dz = x2-x1, y2-y1, z2-z1
+		local lenSq = dx*dx + dy*dy + dz*dz
+		if lenSq == 0 then
+			push(x1,y1,z1)
+			return
+		end
+		local len = math.sqrt(lenSq)
+		local segments = math.max(1, math.floor(len / step))
+		for i=0, segments do
+			local t = i/segments
+			push(x1 + dx*t, y1 + dy*t, z1 + dz*t)
+		end
+	end
+
+	local minX, minY, minZ = bounds.minX, bounds.minY, bounds.minZ
+	local maxX, maxY, maxZ = bounds.maxX, bounds.maxY, bounds.maxZ
+
+	-- 8 corners
+	local c000x,c000y,c000z = minX, minY, minZ
+	local c100x,c100y,c100z = maxX, minY, minZ
+	local c010x,c010y,c010z = minX, maxY, minZ
+	local c110x,c110y,c110z = maxX, maxY, minZ
+	local c001x,c001y,c001z = minX, minY, maxZ
+	local c101x,c101y,c101z = maxX, minY, maxZ
+	local c011x,c011y,c011z = minX, maxY, maxZ
+	local c111x,c111y,c111z = maxX, maxY, maxZ
+
+	-- 12 edges (X-edges)
+	drawLine(c000x,c000y,c000z, c100x,c100y,c100z)
+	drawLine(c010x,c010y,c010z, c110x,c110y,c110z)
+	drawLine(c001x,c001y,c001z, c101x,c101y,c101z)
+	drawLine(c011x,c011y,c011z, c111x,c111y,c111z)
+	-- 12 edges (Y-edges)  (Has more points)
+	step = step / 2
+	drawLine(c000x,c000y,c000z, c010x,c010y,c010z)
+	drawLine(c100x,c100y,c100z, c110x,c110y,c110z)
+	drawLine(c001x,c001y,c001z, c011x,c011y,c011z)
+	drawLine(c101x,c101y,c101z, c111x,c111y,c111z)
+	step = step * 2
+	-- 12 edges (Z-edges)
+	drawLine(c000x,c000y,c000z, c001x,c001y,c001z)
+	drawLine(c100x,c100y,c100z, c101x,c101y,c101z)
+	drawLine(c010x,c010y,c010z, c011x,c011y,c011z)
+	drawLine(c110x,c110y,c110z, c111x,c111y,c111z)
+
+	return pts
 end
 
 return spatialHash

@@ -6,8 +6,9 @@ This library finds a more accurate bounding box for vehicles by running voxel sc
 ---@field vehicle_id integer the id of the vehicle being scanned
 ---@field paused boolean whether the scan is paused
 ---@field center_voxel table<number> the center voxel coordinates {x,y,z} from which to scan
+---@field scan_id integer unique identifier for this scan
+---@field start_tick integer the tick when the scan started
 ---@field current_radius integer the current radius being scanned
----@field current_shell_progress integer the progress through the current shell
 ---@field best_sqdist number the best squared distance found so far
 ---@field best_bounds obb the best bounding box found so far (OBB in voxel space)
 ---@field has_any boolean whether any voxels have been found yet
@@ -20,11 +21,12 @@ This library finds a more accurate bounding box for vehicles by running voxel sc
 ---@field face_idx integer which face is currently being scanned (1..6)
 ---@field face_u integer the current U iterator on the face (range -r..r)
 ---@field face_v integer the current V iterator on the face (range -r..r)
----@field max_radius integer maximum radius (in voxels) to scan before we stop
+---@field min_radius integer the minimum radius to scan to
+---@field last_successful_radius integer the last radius where we found any voxels. Used for knowing when to end
 
 local boundsScanner = {}
-local MAX_BUDGET = 500
-local BUDGET = 100
+local MAX_BUDGET = 999999
+local BUDGET = 200
 local tickIndex = 1
 
 d = require("libs.script.debugging")
@@ -41,16 +43,13 @@ function boundsScanner.tick()
     local attempts = 0
     while allScans[tickIndex] and allScans[tickIndex].paused == true do
         --Skip vehicles that are not simulating
-        d.printDebug("Bounds Scanner skipping paused scan ",tickIndex)
         tickIndex = tickIndex + 1
         attempts = attempts + 1
         if tickIndex > totalScans then tickIndex = 1 end
         if attempts >= totalScans or allScans[tickIndex] == nil then
-            d.printDebug("Bounds Scanner found no active scans after ",attempts," attempts")
             return --Theres nothing to scan currrently, everythings unloaded
         end
     end
-    d.printDebug("Bounds Scanner processing scan ",tickIndex," of ",totalScans)
     local chosenScan = allScans[tickIndex]
     tickIndex = tickIndex + 1
 
@@ -60,11 +59,10 @@ function boundsScanner.tick()
     local face_idx = chosenScan.face_idx or 1
     local u = chosenScan.face_u or -radius
     local v = chosenScan.face_v or -radius
+    local last_successful_radius = chosenScan.last_successful_radius or 0
 
     -- Decide a maximum radius in voxels using collider_data.radius (meters) if available
-    local info = g_savedata.vehicleInfo[chosenScan.vehicle_id]
-    local r_hint_m = (info and info.collider_data and info.collider_data.radius) or 20 -- meters
-    local max_radius = chosenScan.max_radius or (math.ceil(r_hint_m / 0.25) + 2)
+    local min_radius = chosenScan.min_radius or 5
 
     -- Track best bounds in voxel space relative to center
     local has_any = chosenScan.has_any or false
@@ -77,6 +75,7 @@ function boundsScanner.tick()
     local best_sqdist = chosenScan.best_sqdist or 0
 
     local remaining = BUDGET
+    local complete = false
 
     -- Helper to update best bounds when a voxel is found at offset (dx,dy,dz)
     local function on_hit(ix, iy, iz)
@@ -95,6 +94,7 @@ function boundsScanner.tick()
             if iz > maxVZ then maxVZ = iz end
             if d2 > best_sqdist then best_sqdist = d2 end
         end
+        last_successful_radius = radius
     end
 
     -- Compute offsets for a given face (1..6): +X, -X, +Y, -Y, +Z, -Z
@@ -125,8 +125,9 @@ function boundsScanner.tick()
             u, v = -radius, -radius
             face_idx = 1
         else
-            -- Stop if we've exceeded the maximum radius
-            if radius > max_radius then
+            -- Stop scanning if completed
+            if (radius-last_successful_radius) > 2 and radius > min_radius then
+                complete = true
                 break
             end
 
@@ -141,6 +142,10 @@ function boundsScanner.tick()
             local vz = center_z + oz
             if shrapnel.checkVoxelExists(chosenScan.vehicle_id, vx, vy, vz) then
                 on_hit(ox, oy, oz)
+                if false and g_savedata.debug.scan then
+                    local real_pos = s.getVehiclePos(chosenScan.vehicle_id, vx, vy, vz)
+                    d.debugLabel("scan", real_pos, "Scan Hit", 40)
+                end
             end
             remaining = remaining - 1
 
@@ -167,7 +172,6 @@ function boundsScanner.tick()
     chosenScan.face_idx = face_idx
     chosenScan.face_u = u
     chosenScan.face_v = v
-    chosenScan.max_radius = max_radius
     chosenScan.has_any = has_any
     chosenScan.minVX = minVX
     chosenScan.minVY = minVY
@@ -176,7 +180,16 @@ function boundsScanner.tick()
     chosenScan.maxVY = maxVY
     chosenScan.maxVZ = maxVZ
     chosenScan.best_sqdist = best_sqdist
-    chosenScan.best_bounds = has_any and { minVX=minVX, minVY=minVY, minVZ=minVZ, maxVX=maxVX, maxVY=maxVY, maxVZ=maxVZ } or chosenScan.best_bounds
+    chosenScan.best_bounds = has_any and {minX=minVX/4, minY=minVY/4, minZ=minVZ/4, maxX=maxVX/4, maxY=maxVY/4, maxZ=maxVZ/4} or chosenScan.best_bounds
+    chosenScan.last_successful_radius = last_successful_radius
+
+    -- If complete
+    if complete then
+        g_savedata.vehicleInfo[chosenScan.vehicle_id].collider_data.obb_bounds = chosenScan.best_bounds
+        g_savedata.vehicleInfo[chosenScan.vehicle_id].collider_data.radius = math.sqrt(best_sqdist) * 0.25
+        boundsScanner.stopScanForVehicle(chosenScan.vehicle_id)
+        d.printDebug("Bounds Scanner completed scan for vehicle ",chosenScan.vehicle_id," after reaching radius ",chosenScan.current_radius)
+    end
 end
 
 -------------------------------
@@ -195,11 +208,16 @@ function boundsScanner.startScanForVehicle(vehicle_id)
         d.printWarning("Failed to get vehicle voxel for ",vehicle_id,"... startScanForVehicle failed!")
         return
     end
+    d.printDebug("Starting bounds scan for vehicle ",vehicle_id," at voxel (",voxel_x,",",voxel_y,",",voxel_z,")")
     --Add the scan to the list
+    g_savedata.scanCurrentID = g_savedata.scanCurrentID + 1
     table.insert(g_savedata.vehicleBoundScans, {
         vehicle_id = vehicle_id,
         paused = false,
         center_voxel = {voxel_x, voxel_y, voxel_z},
+        scan_id = math.floor(g_savedata.scanCurrentID),
+        start_tick = g_savedata.tickCounter,
+        last_successful_radius = 0
     })
 end
 
@@ -271,19 +289,25 @@ function boundsScanner.calculateBudgetTime(time_per_tick)
     local start_time = s.getTimeMillisec()
     local time_passed = 0
     local total_calls = 0
-    while time_passed < 10 do
-        for i=1, 50 do
+    local CALLS_PER_ITER = 1000
+    while time_passed < 15 do
+        for i=1, CALLS_PER_ITER do
             shrapnel.checkVoxelExists(targetVehicle, 0, 0, 0)
         end
-        total_calls = total_calls + 50
+        total_calls = total_calls + CALLS_PER_ITER
         time_passed = s.getTimeMillisec() - start_time
     end
     local time_per_call = time_passed / total_calls
     -- Calculate the amount of calls that we can do within the target time per tick
-    local calls_per_tick = math.floor(time_per_tick / time_per_call)
+    local overhead_divisor = 3 --Account for overhead of everything else it does
+    local calls_per_tick = math.floor((time_per_tick / time_per_call) / overhead_divisor)
     local calls_per_tick_limited = math.min(calls_per_tick, MAX_BUDGET)
     d.printDebug("Calculated bounds scanner budget: ",calls_per_tick_limited," calls per tick (",time_per_call,"ms per call, ",time_passed,"ms spent testing)")
     return calls_per_tick_limited
+end
+
+function boundsScanner.setBudget(new_budget)
+    BUDGET = new_budget
 end
 
 return boundsScanner

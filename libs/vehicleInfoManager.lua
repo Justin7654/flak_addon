@@ -4,6 +4,8 @@
 
 ---@class colliderData
 ---@field radius number the radius of the bounding sphere around the vehicle
+---@field min_radius number radius but theres no multipliers applied (in meters)
+---@field obb_bounds obb? the oriented bounding box of the vehicle in voxel space
 
 ---@class vehicleInfo
 ---@field needs_setup boolean whether the vehicle needs to be setup. If this is true, some data will be nil
@@ -131,6 +133,7 @@ function vehicleInfoManager.completeVehicleSetup(vehicle_id)
 	end
 
 	-- Compute a bounding sphere using the center of the components' bounding box.
+	-- These are very rough but are temporary until boundsScanner gets a final result
 	if #allComponents < 2 then
 		d.printDebug("Computing collider data for vehicle ",vehicle_id," with ",#allComponents," components using voxel count")
 		--base it off the voxel count
@@ -142,6 +145,7 @@ function vehicleInfoManager.completeVehicleSetup(vehicle_id)
 		local scaledRadius = radius * MULTIPLIER --Scale it up since its not really a filled cube, its hallow and possibly a rectangle
 		vehicleInfo.collider_data = {
 			radius = math.max(scaledRadius, 4),
+			min_radius = radius,
 		}
 		d.printDebug(vehicleInfo.voxels)
 	else
@@ -176,11 +180,13 @@ function vehicleInfoManager.completeVehicleSetup(vehicle_id)
 		--The actual stormworks vehicle position is based off center of mass, which we cant calculate
 		--Since we also can only get component positions, add a multiplier to the collider radius to be safe
 		--Wings also usually lack components
-		local MULTIPLIER = 2.5
+		local MULTIPLIER = 3.0
 		local BLOCK_SIZE = 0.25
-		local radius = (math.sqrt(farthestSq)*BLOCK_SIZE) * MULTIPLIER
+		local radius = math.sqrt(farthestSq)*BLOCK_SIZE
+		local scaledRadius = radius * MULTIPLIER
 		vehicleInfo.collider_data = {
-			radius = math.max(radius, 4),
+			radius = math.max(scaledRadius, 4),
+			min_radius = radius
 		}
 		d.printDebug("Set collider data for vehicle ",vehicle_id," to radius ",radius)
 	end

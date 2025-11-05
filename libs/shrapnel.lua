@@ -39,15 +39,16 @@ function shrapnel.tickAll()
         UPDATE_RATE = 1
         --Update the spatial hash grid for loaded vehicles
 	    for i, vehicle_id in ipairs(g_savedata.loadedVehicles) do
-	    	if isTickID(i, UPDATE_RATE) then
-	    		--d.printDebug("Updating spatial hash for vehicle ",vehicle_id)
-	    		if shrapnel.vehicleEligableForShrapnel(vehicle_id) then
-	    			local pos = s.getVehiclePos(vehicle_id)
-	    			local vehicleInfo = g_savedata.vehicleInfo[vehicle_id]
-	    			local radius = vehicleInfo.collider_data.radius
-	    			local bounds = spatialHash.boundsFromCenterRadius(pos[13], pos[14], pos[15], radius)
-	    			spatialHash.updateVehicleInGrid(vehicle_id, bounds)
-	    		end
+	    	if shrapnel.vehicleEligableForShrapnel(vehicle_id) then
+	    		local pos = s.getVehiclePos(vehicle_id)
+	    		local vehicleInfo = g_savedata.vehicleInfo[vehicle_id]
+                local bounds = nil
+                if vehicleInfo.collider_data.obb_bounds then
+                    bounds = spatialHash.boundsFromOBB(pos, vehicleInfo.collider_data.obb_bounds)
+                else
+                    bounds = spatialHash.boundsFromCenterRadius(pos[13], pos[14], pos[15], vehicleInfo.collider_data.radius)
+                end
+                spatialHash.updateVehicleInGrid(vehicle_id, bounds)
 	    	end
 	    end
     else
@@ -207,9 +208,7 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
                 break
             end
         end
-        
-        --d.debugLabel("shrapnel", hitPosition, "!", 1400, 40)
-        
+
         --Break out of the stepping if it hit something
         if hit then
             break
@@ -303,7 +302,6 @@ function shrapnel.spawnShrapnel(position, velocityX, velocityY, velocityZ)
         id = g_savedata.shrapnelCurrentID,
     }
     g_savedata.shrapnelChunks[g_savedata.shrapnelCurrentID] = shrapnelChunk
-    --taskService:AddTask("tickShrapnelChunk", 1,  {shrapnelChunk})
 end
 
 --- Damages a vehicle using a world position instead of a voxel position.
@@ -323,14 +321,13 @@ function shrapnel.getVehicleVoxelAtWorldPosition(vehicle_id, position, vehicleZe
     ---]]]
 
     --Get the vehicle position at 0,0,0
-    --d.startProfile("getVehicleVoxelAtWorldPosition")
     local vehiclePos = vehicleZeroPos
     if vehiclePos == nil then
         d.printDebug("Calculating own voxel zero position manually")
         success, vehiclePos = shrapnel.calculateVehicleVoxelZeroPosition(vehicle_id)
+        vehiclePos = matrixExtras.invert(vehiclePos)
         if not success then
             d.printDebug("(shrapnel.getVehicleVoxelAtWorldPosition) Failed to get voxel zero position")
-            d.endProfile("getVehicleVoxelAtWorldPosition")
             return false, 0, 0, 0
         end
         --d.debugLabel("shrapnel", vehiclePos, "Zero position ("..vehicle_id..")", time.second)
@@ -343,7 +340,6 @@ function shrapnel.getVehicleVoxelAtWorldPosition(vehicle_id, position, vehicleZe
 
     --d.debugLabel("shrapnel", position, combinedX..","..combinedY..","..combinedZ, 6*time.second)
 
-    --d.endProfile("getVehicleVoxelAtWorldPosition")
     return true, combinedX, combinedY, combinedZ
 end
 
