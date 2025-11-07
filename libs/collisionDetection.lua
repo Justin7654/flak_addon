@@ -1,5 +1,0 @@
-collisionDetection = {}
-
-
-
-return collisionDetection

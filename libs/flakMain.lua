@@ -30,7 +30,7 @@ function flakMain.addVehicleToSpawnedFlak(vehicle_id)
     ---@field simulating boolean if the flak vehicle is currently simulating
     ---@field position SWMatrix the position of the flak vehicle at the time of spawn
     ---@field pseudoTrackingPlayer number|nil the player id the flak is tracking if its unloaded
-    ---@field targetPositionData RecentPositionData the recent position data of the flak target
+    ---@field targetPositionData recentPositionData the recent position data of the flak target
     local flakData = {
         vehicle_id = vehicle_id,
         tick_id = math.random(0, time.second*g_savedata.settings.fireRate-1),
@@ -161,9 +161,9 @@ end
 --- @return number travelTime the time in ticks it will take for the flak to reach the target
 function flakMain.calculateTravelTime(targetMatrix, flakMatrix)
     local distance = matrix.distance(targetMatrix, flakMatrix)
-    local speed = g_savedata.settings.flakShellSpeed/time.second --The speed in m/s
+    local speed = g_savedata.settings.flakShellSpeed/time.second
     local travelTime = math.floor(distance/speed)
-    d.printDebug("Travel time is ",travelTime, "ticks (",travelTime/60," seconds) because seperation is ",distance,"m and the speed is ",g_savedata.settings.flakShellSpeed,"m/s"..
+    d.printDebug("Travel time is ",travelTime, "ticks (",travelTime/time.second," seconds) because seperation is ",distance,"m and the speed is ",g_savedata.settings.flakShellSpeed,"m/s"..
         " (",speed,"m/tick)")
     return travelTime
 end
@@ -193,20 +193,16 @@ function flakMain.calculateLead(flak)
 end
 
 --- Generates a flak explosion nearby the given matrix.
+--- This does not enforce constraints, such as minimum altitude.
 --- @param sourceMatrix SWMatrix the position of the gun thats firing
 --- @param targetMatrix SWMatrix the matrix to generate the explosion at
 function flakMain.fireFlak(sourceMatrix, targetMatrix) --Convert to using flakObject
-    local x,alt,z = matrix.position(targetMatrix)
+    local targetX, targetAltitude, targetZ = matrix.position(targetMatrix)
+    local sourceX, sourceY, sourceZ = matrix.position(sourceMatrix)
     local currentWeather = s.getWeather(targetMatrix)
-    d.printDebug("Firing at ",x,",",alt,",",z)
+    d.printDebug("Firing at ", targetX, ",", targetAltitude, ",", targetZ)
 
-    --Calculate if its too high
-    if alt < g_savedata.settings.minAlt then
-        d.printDebug("Target is too low to fire at (",alt,"m)")
-        return
-    end
-
-    --Calculate the weather multiplier, bad weather will multiply the existing penaltys
+    -- Calculate weather multiplier
     local weatherMultiplier = 1
     if not g_savedata.settings.ignoreWeather then
         weatherMultiplier = weatherMultiplier + currentWeather.fog/2
@@ -214,42 +210,109 @@ function flakMain.fireFlak(sourceMatrix, targetMatrix) --Convert to using flakOb
         weatherMultiplier = weatherMultiplier + (currentWeather.rain + currentWeather.snow)/10
     end
 
-    --Calculate the night multiplier
+    -- Calculate night visibility penalty
+    local peakNightPenalty = 0.2 -- Accuracy degrades by up to 20% at night, with 0% at noon, and 20% at midnight
     local clock = s.getTime()
+    local nightMultiplier = 1 + (1 - (clock.daylight_factor or 1)) * peakNightPenalty
 
-    --Calculate accuracy
-    local spread = 0
-    local altFactor = 15/(0.5 ^ (alt/320)) --10+(0.2*alt)
-    local spread = altFactor * weatherMultiplier
-    spread = spread / math.max(g_savedata.settings.flakAccuracyMult, 0.1)
-    d.printDebug("Spread is ",spread," with altFactor ",altFactor," and weatherMultiplier ",weatherMultiplier," and flakAccuracyMult ",g_savedata.settings.flakAccuracyMult)
-    d.printDebug("alt is ",alt)
-    if alt > 30000 then
-        d.printDebug("Fire", "Targeted fire altitude is too high! Cancelling due to high probability of infinity error. Altitude: ",alt)
-        return
-    end
-    if spread > 9999 then
-        d.printDebug("Fire", "Spread is too high! Defaulting to 1000. Cancelling. Spread was ",spread,", altFactor: ",altFactor,", weatherMultiplier: ",weatherMultiplier," alt: ",alt)
-        return
-    end
-    if spread == math.huge then
-        d.printError("Fire", "Spread is infinite! Defaulting to 10. AltFactor: ",altFactor,", weatherMultiplier: ",weatherMultiplier," alt: ",alt)
-        spread = 10
-    end
-    if type(spread) ~= "number" then
-        d.printError("Fire", "Spread is not a number! Defaulting to 10. AltFactor: ",altFactor,", weatherMultiplier: ",weatherMultiplier," flakAccuracyMult: ",g_savedata.settings.flakAccuracyMult)
-        spread = 10
+    --- Generates a single random value from a Gaussian (normal) distribution
+    --- Uses Box-Muller transform to convert uniform random values into bell curve distribution
+    --- @param mean number the center point of the distribution
+    --- @param standardDeviation number how spread out the values are (1-sigma)
+    --- @return number gaussianValue a random value following the normal distribution
+    local function gaussian(mean, standardDeviation)
+        local uniformRandom1 = math.max(math.random(), 1e-6)  -- Avoid log(0)
+        local uniformRandom2 = math.random()
+        local radius = math.sqrt(-2 * math.log(uniformRandom1))
+        local angle = 2 * math.pi * uniformRandom2
+        return mean + standardDeviation * radius * math.cos(angle)
     end
 
-    --Randomize the targetMatrix based on spread
-    spread = math.floor(spread)
-    x = x + math.random(-spread, spread)
-    alt = alt + math.random(-spread, spread)
-    z = z + math.random(-spread, spread)
-    local resultMatrix = matrix.translation(x,alt, z)
+    --- Generates two correlated random values from a bivariate Gaussian distribution
+    --- Creates realistic shot grouping where horizontal errors are correlated (elliptical pattern)
+    --- @param sigmaX number standard deviation in X direction
+    --- @param sigmaZ number standard deviation in Z direction
+    --- @param correlation number correlation coefficient between X and Z (-1 to 1)
+    --- @return number errorX the X-axis error component
+    --- @return number errorZ the Z-axis error component (correlated with X)
+    local function correlatedGaussian2D(sigmaX, sigmaZ, correlation)
+        local uniformRandom1 = math.max(math.random(), 1e-6)
+        local uniformRandom2 = math.random()
+        local radius = math.sqrt(-2 * math.log(uniformRandom1))
+        local angle = 2 * math.pi * uniformRandom2
+        local independentZ0 = radius * math.cos(angle)
+        local independentZ1 = radius * math.sin(angle)
+        
+        -- Apply correlation to create dependent relationship between X and Z
+        local errorX = sigmaX * independentZ0
+        local errorZ = sigmaZ * (correlation * independentZ0 + math.sqrt(1 - (correlation * correlation)) * independentZ1)
+        return errorX, errorZ
+    end
 
-    --Randomize travel time alittle
-    local travelTime = flakMain.calculateTravelTime(targetMatrix, sourceMatrix)
+    -- Calculate distance from the source to the target
+    local deltaX = targetX - sourceX
+    local deltaY = targetAltitude - sourceY
+    local deltaZ = targetZ - sourceZ
+    local rangeToTarget = math.sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ)
+
+    -- Base dispersion in milliradians
+    local baseDispersionMils = 8.0 -- Biggest factor in accuracy, the angle precision of the gun
+    local accuracyMultiplier = math.max(g_savedata.settings.flakAccuracyMult or 1, 0.1)
+    
+    -- Horizontal correlation factor, creates elliptical shot grouping instead of circular
+    local horizontalCorrelation = 0.4
+
+    -- Convert angular dispersion to linear distance at range, affected by weather and time of day
+    local baseHorizontalSigma = (rangeToTarget * baseDispersionMils / 1000) * (weatherMultiplier * nightMultiplier) / accuracyMultiplier
+    local horizontalSigmaX = baseHorizontalSigma
+    local horizontalSigmaZ = baseHorizontalSigma
+
+    -- Vertical dispersion is generally larger, so give it a extra multiplier when calculating its sigma
+    local verticalMultiplier = 1.6 --Might remove, this now seems redundant
+    local verticalSigma = baseHorizontalSigma * verticalMultiplier
+
+    -- Calculate the shells time of flight for fuze error calculations
+    local travelTimeInTicks = flakMain.calculateTravelTime(targetMatrix, sourceMatrix)
+    local timeOfFlightSeconds = travelTimeInTicks / (time.second or 60)
+
+    -- Calculate a fuze timing error based on its vertical velocity to add error vertically
+    local fuzeTimingStdDevMs = 80 --milliseconds of error
+    local verticalVelocityEstimate = deltaY / math.max(timeOfFlightSeconds, 1e-3)
+    local fuzeAltitudeError = math.abs(verticalVelocityEstimate) * (fuzeTimingStdDevMs / 1000)
+    
+    -- Combine the base vertical dispersion with fuze error
+    verticalSigma = math.sqrt(verticalSigma * verticalSigma + fuzeAltitudeError * fuzeAltitudeError)
+
+    -- Sample correlated horizontal miss pattern (creates elliptical shot groups)
+    local horizontalErrorX, horizontalErrorZ = correlatedGaussian2D(horizontalSigmaX, horizontalSigmaZ, horizontalCorrelation)
+    
+    -- Sample vertical miss (altitude errors are independent of horizontal)
+    local verticalError = gaussian(0, verticalSigma)
+
+    -- Calculate muzzle velocity variation, adds bias along the line-of-sight
+    -- Shells don't leave the barrel at exactly the same speed
+    local muzzleVelocityJitterPercent = 0.01 --1%
+    local rangeErrorSigma = muzzleVelocityJitterPercent * rangeToTarget
+    local muzzleVelocityRangeBias = gaussian(0, rangeErrorSigma)
+    
+    -- Adds error along the shot direction / line between the source and target
+    local safeRange = math.max(rangeToTarget, 1e-6)
+    local losUnitX, losUnitY, losUnitZ = deltaX / safeRange, deltaY / safeRange, deltaZ / safeRange
+
+    horizontalErrorX = horizontalErrorX + losUnitX * muzzleVelocityRangeBias
+    horizontalErrorZ = horizontalErrorZ + losUnitZ * muzzleVelocityRangeBias
+    verticalError    = verticalError    + losUnitY * muzzleVelocityRangeBias
+
+    -- Use the final errors to get the actual hit point
+    local impactX = targetX + horizontalErrorX
+    local impactZ = targetZ + horizontalErrorZ
+    local impactAltitude = targetAltitude + verticalError
+    d.printDebug(string.format("Impact error - Horizontal X: %.2f m, Horizontal Z: %.2f m, Vertical: %.2f m", horizontalErrorX, horizontalErrorZ, verticalError))
+
+    local resultMatrix = matrix.translation(impactX, impactAltitude, impactZ)
+
+    -- Calculate shell travel time for delayed explosion spawning
+    local travelTime = flakMain.calculateTravelTime(resultMatrix, sourceMatrix)
     
     --Spawn the explosion
     --- @class ExplosionData
@@ -265,7 +328,7 @@ function flakMain.flakExplosion(explosionData)
     position = explosionData.position
     d.printDebug("Explosion is at ",s.getTile(position).name," as magnitude ",magnitude)
     s.spawnExplosion(position, magnitude)
-    shrapnel.explosion(position,35)
+    shrapnel.explosion(position,65)
 end
 
 return flakMain

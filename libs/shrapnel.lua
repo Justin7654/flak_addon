@@ -57,9 +57,9 @@ function shrapnel.tickAll()
             --Check if the vehicle is owned by a player so we dont waste time checking AI vehicles or static vehicles
             local vehicleInfo = vehicleInfoTable[vehicle_id]
             if vehicleInfo  == nil then
-                d.printError("Vehicle info is nil for vehicle ",vehicle_id,". Applying emergency rough data fix to prevent error\n"..SSSWTOOL_SRC_FILE, " line:", SSSWTOOL_SRC_LINE)
-                --Recover from a error
-                vehicleInfo = {owner = -1}
+                d.printError("Vehicle info is nil for vehicle ",vehicle_id,". Removing from loadedVehicles to prevent error\n"..SSSWTOOL_SRC_FILE, " line:", SSSWTOOL_SRC_LINE)
+                table.remove(g_savedata.loadedVehicles, _)
+                return true --Move to next tick
             end
             --Check if it has a baseVoxel, otherwise it cant be checked
             if vehicleInfo.base_voxel ~= nil then
@@ -91,6 +91,7 @@ function shrapnel.tickAll()
         shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, vehicleZeroPositions, vehicleColliderRadiuses)
     end
     d.endProfile("tickAllShrapnel")
+    return false
 end
 
 --- Updates a shrapnel object
@@ -181,26 +182,22 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
     
     if #finalVehicles == 0 then
         --If there are no vehicles to check, then we can skip the steps and just move it to the final position
-        chunk.positionX = futureX
-        chunk.positionY = futureY
-        chunk.positionZ = futureZ
         totalSteps = 0
     end
 
+    local newX, newY, newZ = chunk.positionX, chunk.positionY, chunk.positionZ
+    local velX, velY, velZ = chunk.velocityX, chunk.velocityY, chunk.velocityZ
     for step=1, totalSteps do
         -- Update position
-        chunk.positionX = chunk.positionX + chunk.velocityX
-        chunk.positionY = chunk.positionY + chunk.velocityY
-        chunk.positionZ = chunk.positionZ + chunk.velocityZ
-
-        -- Cache the shrapnel position
-        local hitPosition = m.translation(chunk.positionX, chunk.positionY, chunk.positionZ)
+        newX = newX + velX
+        newY = newY + velY
+        newZ = newZ + velZ
 
         --Attempt to damage near vehicles
         for i,vehicle_id in ipairs(finalVehicles) do
             --Attempt to damage
             checks = checks + 1
-            hit = shrapnel.damageVehicleAtWorldPosition(vehicle_id, hitPosition, vehicleZeroPositions[vehicle_id],5, 0.4)
+            hit = shrapnel.damageVehicleAtWorldPosition(vehicle_id, newX, newY, newZ, vehicleZeroPositions[vehicle_id],1, 0.4)
             if DONT_DESTROY_ON_HIT_DEBUG then
                 hit = false
             end
@@ -214,6 +211,7 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
             break
         end
     end
+    chunk.positionX, chunk.positionY, chunk.positionZ = futureX, futureY, futureZ
     
     --Shrapnel debug
     if g_savedata.debug.shrapnel then
@@ -282,7 +280,7 @@ function shrapnel.spawnShrapnel(position, velocityX, velocityY, velocityZ)
     velocityZ = velocityZ / time.second
 
     --Convert the position matrix to just xyz so that it can be stored cheaper and retrieved faster during ticks
-    local x, y, z = matrix.positionFast(position)
+    local x, y, z = position[13], position[14], position[15]
 
     --- @class shrapnelChunk
     --- @field ui_id number? If debug is enabled, this is the ui id of the debug label to display the shrapnel. Otherwise its nil
@@ -306,20 +304,15 @@ end
 
 --- Damages a vehicle using a world position instead of a voxel position.
 --- @param vehicle_id number The id of the vehicle to damage
---- @param position SWMatrix The position in the world to damage the vehicle at
+--- @param x number The x world position to damage at
+--- @param y number The y world position to damage at
+--- @param z number The z world position to damage at
 --- @param vehicleZeroPos SWMatrix? The position calculated by calculateVehicleVoxelZeroPosition. If not provided, it will be calculated
 --- @return boolean success weather the damage was successful or not
 --- @return number voxelX the x voxel position
 --- @return number voxelY the y voxel position
 --- @return number voxelZ the z voxel position
-function shrapnel.getVehicleVoxelAtWorldPosition(vehicle_id, position, vehicleZeroPos)
-    ---[[[
-    --- In Depth Explanation:
-    ---  1. its gets the baseVoxel (the closest voxel to 0,0,0 which exists)
-    ---  2. gets the vehicle position at the baseVoxel
-    ---  3. offsets the vehicle position variable by the baseVoxel so that the vehiclePos is at where 0,0,0 should be
-    ---]]]
-
+function shrapnel.getVehicleVoxelAtWorldPosition(vehicle_id, x, y, z, vehicleZeroPos)
     --Get the vehicle position at 0,0,0
     local vehiclePos = vehicleZeroPos
     if vehiclePos == nil then
@@ -334,12 +327,21 @@ function shrapnel.getVehicleVoxelAtWorldPosition(vehicle_id, position, vehicleZe
     end
     
     --Calculate the voxel positions
-    local finalMatrix = matrixExtras.multiplyMatrix(position, vehiclePos)
-    local combinedX, combinedY, combinedZ = finalMatrix[13], finalMatrix[14], finalMatrix[15] --Converts the matrix to xyz variables
+    --[[ Old method: Full matrix multiply
+        local finalMatrix = matrixExtras.multiplyMatrix(position, vehiclePos)
+        local combinedX, combinedY, combinedZ = finalMatrix[13], finalMatrix[14], finalMatrix[15] --Converts the matrix to xyz variables
+
+        New method: Since we only need the xyz portion, we can only multiply the position results, instead of the full matrix.
+        This reduces the total operations by alot, and benchmarks shows this is twice as fast
+    --]]
+    
+    -- Apply inverse transformation directly (affine matrix * vector)
+    -- This computes the local position without full matrix multiply
+    local combinedX = vehiclePos[1] * x + vehiclePos[5] * y + vehiclePos[9] * z + vehiclePos[13]
+    local combinedY = vehiclePos[2] * x + vehiclePos[6] * y + vehiclePos[10] * z + vehiclePos[14]
+    local combinedZ = vehiclePos[3] * x + vehiclePos[7] * y + vehiclePos[11] * z + vehiclePos[15]
     combinedX, combinedY, combinedZ = (combinedX * 4) // 1, (combinedY * 4) // 1, (combinedZ * 4) // 1 --Each voxel is 0.25m and then floors the result (this is slightly faster than math.floor) 
-
-    --d.debugLabel("shrapnel", position, combinedX..","..combinedY..","..combinedZ, 6*time.second)
-
+    
     return true, combinedX, combinedY, combinedZ
 end
 
@@ -354,7 +356,7 @@ function shrapnel.calculateVehicleVoxelZeroPosition(vehicle_id)
     --Get the base voxel to use for getting the vehicle position
     local baseVoxel = g_savedata.vehicleInfo[vehicle_id].base_voxel
     if baseVoxel == nil then
-        return false, matrix.translation(0,0,0)
+        return false, matrixExtras.newMatrix(0,0,0)
     end
     local voxelX, voxelY, voxelZ = baseVoxel.x, baseVoxel.y, baseVoxel.z
     
@@ -362,21 +364,26 @@ function shrapnel.calculateVehicleVoxelZeroPosition(vehicle_id)
     local vehiclePos,success = s.getVehiclePos(vehicle_id, voxelX, voxelY, voxelZ)
     if not success then
         d.printError("Shrapnel", SSSWTOOL_SRC_LINE,": Failed to get vehicle position for vehicle ",vehicle_id)
-        return false, matrix.translation(0,0,0)
+        return false, matrixExtras.newMatrix(0,0,0)
     end
     if SUPER_DEBUG then d.debugLabel("shrapnel", vehiclePos, "Raw pos: "..voxelX..", "..voxelY..", "..voxelZ.." ("..vehicle_id..")", time.second) end
     
     --If the used voxels are not 0,0,0 then offset the position so that they are at where 0,0,0 would be if it existed
     if voxelX ~= 0 or voxelY ~= 0 or voxelZ ~= 0 then   
-        vehiclePos = matrix.multiply(vehiclePos, matrix.translation(-voxelX/4, -voxelY/4, -voxelZ/4))
+        --vehiclePos = matrix.multiply(vehiclePos, matrix.translation(-voxelX/4, -voxelY/4, -voxelZ/4))
+        -- Only calculate what we need instead of a full matrix. Increased 
+        local dx, dy, dz = -voxelX/4, -voxelY/4, -voxelZ/4
+        vehiclePos[13] = vehiclePos[13] + vehiclePos[1] * dx + vehiclePos[5] * dy + vehiclePos[9] * dz
+        vehiclePos[14] = vehiclePos[14] + vehiclePos[2] * dx + vehiclePos[6] * dy + vehiclePos[10] * dz
+        vehiclePos[15] = vehiclePos[15] + vehiclePos[3] * dx + vehiclePos[7] * dy + vehiclePos[11] * dz
     end
     if SUPER_DEBUG then d.debugLabel("shrapnel", vehiclePos, "Detected 0,0,0 ("..vehicle_id..")", time.second) end
     
     return true, vehiclePos
 end
 
-function shrapnel.damageVehicleAtWorldPosition(vehicle_id, position, zeroPosition, amount, radius)
-    local success, voxelX, voxelY, voxelZ = shrapnel.getVehicleVoxelAtWorldPosition(vehicle_id, position, zeroPosition)
+function shrapnel.damageVehicleAtWorldPosition(vehicle_id, x, y, z, zeroPosition, amount, radius)
+    local success, voxelX, voxelY, voxelZ = shrapnel.getVehicleVoxelAtWorldPosition(vehicle_id, x, y, z, zeroPosition)
     if success then
         return s.addDamage(vehicle_id, amount, voxelX, voxelY, voxelZ, radius)
     end

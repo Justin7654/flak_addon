@@ -5,36 +5,37 @@ Handles ai target leading and collecting position points for the leading
 aiming = {}
 d = require("libs.script.debugging")
 
---- @alias RecentPositionData table<integer, PositionData>
+--- @alias recentPositionData table<integer, positionData>
 
---- @class PositionData
+--- @class positionData
 --- @field pos SWMatrix the position of the target at the time
 --- @field time number the g_savedata tickCounter when the position was recorded
 
---- @return RecentPositionData
+--- @return recentPositionData
 function aiming.newRecentPositionData()
     return {}
 end
 
---- @param RecentPositionData RecentPositionData the table to add the position data to
+--- @param recentPositionData recentPositionData the table to add the position data to
 --- @param pos SWMatrix the position to add to the table
---- @return RecentPositionData newData the modified data
-function aiming.addPositionData(RecentPositionData, pos)
-    table.insert(RecentPositionData, {pos = pos, time = g_savedata.tickCounter})
-    if #RecentPositionData > 3 then
-        table.remove(RecentPositionData, 1)
+--- @return recentPositionData newData the modified data
+function aiming.addPositionData(recentPositionData, pos)
+    table.insert(recentPositionData, {pos = pos, time = g_savedata.tickCounter})
+    if #recentPositionData > 3 then
+        table.remove(recentPositionData, 1)
     end
-    return RecentPositionData
+    return recentPositionData
 end
 
---- @param RecentPositionData RecentPositionData
+--- @param recentPositionData recentPositionData
 --- @return boolean isFull
-function aiming.isPositionDataFull(RecentPositionData)
-    return #RecentPositionData >= 3
+function aiming.isPositionDataFull(recentPositionData)
+    return #recentPositionData >= 3
 end
 
---- @param positionData PositionData
----@param futureTicks number
+--- @param positionData recentPositionData
+--- @param futureTicks number how far into the future to predict
+--- @return SWMatrix predictedPosition The predicted position of the target after futureTicks ticks
 function aiming.predictPosition(positionData, futureTicks)
     -- Check if there are at least 3 points for velocity and acceleration calculation
     if #positionData < 3 then

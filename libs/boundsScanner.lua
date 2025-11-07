@@ -203,7 +203,8 @@ function boundsScanner.startScanForVehicle(vehicle_id)
         d.printWarning("Failed to get vehicle pos for ",vehicle_id,"... startScanForVehicle failed!")
         return
     end
-    local voxel_success, voxel_x, voxel_y, voxel_z = shrapnel.getVehicleVoxelAtWorldPosition(vehicle_id, vehicle_pos)
+    local vehicle_x, vehicle_y, vehicle_z = vehicle_pos[13], vehicle_pos[14], vehicle_pos[15]
+    local voxel_success, voxel_x, voxel_y, voxel_z = shrapnel.getVehicleVoxelAtWorldPosition(vehicle_id, vehicle_x, vehicle_y, vehicle_z)
     if not voxel_success then
         d.printWarning("Failed to get vehicle voxel for ",vehicle_id,"... startScanForVehicle failed!")
         return
@@ -302,7 +303,7 @@ function boundsScanner.calculateBudgetTime(time_per_tick)
     local overhead_divisor = 3 --Account for overhead of everything else it does
     local calls_per_tick = math.floor((time_per_tick / time_per_call) / overhead_divisor)
     local calls_per_tick_limited = math.min(calls_per_tick, MAX_BUDGET)
-    d.printDebug("Calculated bounds scanner budget: ",calls_per_tick_limited," calls per tick (",time_per_call,"ms per call, ",time_passed,"ms spent testing)")
+    --d.printDebug("Calculated bounds scanner budget: ",calls_per_tick_limited," calls per tick (",time_per_call,"ms per call, ",time_passed,"ms spent testing)")
     return calls_per_tick_limited
 end
 

@@ -16,6 +16,7 @@ shrapnel = require("libs.shrapnel")
 vehicleInfoManager = require("libs.vehicleInfoManager")
 spatialHash = require("libs.spatialHash")
 boundsScanner = require("libs.boundsScanner")
+benchmark = require("libs.benchmark")
 
 -- Data
 g_savedata = {
@@ -68,6 +69,7 @@ g_savedata = {
 	debugBoundScanUI = server.getMapID(),
 	debugBoundsScanState = -1, -- -1=overview, any other is the scan ID being viewed
 	debugBoundScanLabelUI = nil, ---@type number[]? List of UI IDs for the debug bound scan labels
+	fakeFlakPosition = nil ---@type SWMatrix? Used in commands, this is a hypothetical position for firing fake flak from
 }
 
 --- @alias callbackID "freeDebugLabel" | "setPopup" | "flakExplosion" | "tickShrapnelChunk" | "debugVoxelPositions"
@@ -167,6 +169,7 @@ function onTick(game_ticks)
 	sanity.idleCheck()
 	taskService:handleTasks()
 	d.tickDebugs()
+	benchmark.tick()
 end
 
 function onVehicleLoad(vehicle_id)
@@ -400,30 +403,16 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 	elseif command == "debugvoxels" then
 		shrapnel.debugVoxelPositions(tostring(args[1]))
 	elseif command == "bench" then
-		local runTimes = 700*1000
+		local runTimes = 800*1000
 		local start1 = s.getTimeMillisec()
 		for i=1, runTimes do
-			math.randomseed(i)
-			local futureX, futureY, futureZ = math.random(-9000,9000), math.random(-100,100), math.random(-9000,9000)
-			local posX, posY, posZ = futureX+math.random(-80,80), futureY+math.random(-80,80), futureZ+math.random(-80,80)
-			if math.abs(futureX - posX) < 30 and math.abs(futureY - posY) < 30 and math.abs(futureZ - posZ) < 30 then
-				-- Do nothing
-			end
+			
 		end
 		local end1 = s.getTimeMillisec()
-		local radius = 30
-    	local radiusSq = radius * radius
+		
 		local start2 = s.getTimeMillisec()
 		for i=1, runTimes do
-			math.randomseed(i)
-			local futureX, futureY, futureZ = math.random(-9000,9000), math.random(-100,100), math.random(-9000,9000)
-			local posX, posY, posZ = futureX+math.random(-80,80), futureY+math.random(-80,80), futureZ+math.random(-80,80)
-			local dx = futureX - posX
-            local dy = futureY - posY
-            local dz = futureZ - posZ
-			if (dx*dx + dy*dy + dz*dz) < radiusSq then
-				-- Do nothing
-			end
+			
 		end
 		local end2 = s.getTimeMillisec()
 		local time1 = (end1 - start1)/runTimes
@@ -458,6 +447,45 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		local newBudget = boundsScanner.calculateBudgetTime(args[1])
 		boundsScanner.setBudget(newBudget)
 		s.announce("[Flak Commands]", "Set bounds scanner budget to "..newBudget.." calls")
+	elseif command == "setflakpos" then
+		local playerPos, is_success = s.getPlayerPos(user_peer_id)
+		if is_success then
+			g_savedata.fakeFlakPosition = playerPos
+			s.announce("[Flak Commands]", "Set fake flak position to your current position")
+		else
+			s.announce("[Flak Commands]", "ERR: Failed to get your position")
+		end
+	elseif command == "testaccuracy" or command == "testacc" then
+		local flakPos = g_savedata.fakeFlakPosition
+		if flakPos == nil then
+			s.announce("[Flak Commands]", "ERR: Fake flak position not set. Use ?flak setflakpos to set it to your current position")
+			return
+		end
+		local targetPos = s.getPlayerPos(user_peer_id)
+		for i=1, 150 do
+			flakMain.fireFlak(flakPos, targetPos)
+		end
+		--Read through the tasks to find the output, and modify them
+		local total = 0
+		local group = 0
+		local timeBetweenExplosions = 60
+		local lastEndTime = 0
+		for _, task in pairs(g_savedata.tasks) do
+			if task.callback == "flakExplosion" and task.arguments then
+				total = total + 1
+				if total > 20 then
+					group = group + 1
+					total = 1
+				end
+				--Make them small
+				task.arguments[1].magnitude = 0.02
+				--Spread out alittle
+				task.endTime = task.endTime + (group*timeBetweenExplosions)
+				lastEndTime = math.max(lastEndTime, task.endTime)
+			end
+		end
+	elseif command == "startbenchmark" then
+		benchmark.startBenchmark()
 	else
 		s.announce("[Flak Commands]", "Command not found")
 	end

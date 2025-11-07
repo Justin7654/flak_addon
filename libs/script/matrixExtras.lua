@@ -21,7 +21,7 @@ MatrixExtras = {
     ---@param pitch number|nil pitch angle (x-axis rotation) in radians
     ---@param roll number|nil roll angle (z-axis rotation) in radians
     ---@return LifeBoatAPI.Matrix
-    newMatrix = function(cls, posX, posY, posZ, yaw, pitch, roll)
+    newMatrix = function(posX, posY, posZ, yaw, pitch, roll)
         yaw     = yaw or 0
         pitch   = pitch or 0
         roll    = roll or 0
