@@ -219,8 +219,15 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
             chunk.ui_id = s.getMapID()
         end
         local x, y, z = chunk.positionX, chunk.positionY, chunk.positionZ
-        local text = "Shrapnel\nChecks: "..checks
-        server.setPopup(-1, chunk.ui_id, "", true, text, x, y, z, 300)
+        local text = "Shrapnel\n"..#vehiclesToCheck.." | "..#finalVehicles.." | "..checks
+        if #finalVehicles > 0 then
+            text = "!!!!!!!!!\n" .. text
+        elseif #vehiclesToCheck > 0 then
+            text = "/////////\n" .. text
+        else
+            text = ".........\n" .. text
+        end
+        server.setPopup(-1, chunk.ui_id, "", true, text, x, y, z, 200)
         if hit then
             d.debugLabel("shrapnel", m.translation(x, y, z), "Hit", 5*time.second)
         end

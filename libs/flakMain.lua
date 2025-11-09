@@ -256,7 +256,7 @@ function flakMain.fireFlak(sourceMatrix, targetMatrix) --Convert to using flakOb
     local rangeToTarget = math.sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ)
 
     -- Base dispersion in milliradians
-    local baseDispersionMils = 8.0 -- Biggest factor in accuracy, the angle precision of the gun
+    local baseDispersionMils = 10.0 -- Biggest factor in accuracy, the angle precision of the gun
     local accuracyMultiplier = math.max(g_savedata.settings.flakAccuracyMult or 1, 0.1)
     
     -- Horizontal correlation factor, creates elliptical shot grouping instead of circular
