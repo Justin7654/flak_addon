@@ -233,6 +233,76 @@ function spatialHash.queryLineFast(x1,y1,z1, x2,y2,z2)
 	-- Loop through startCell, endCell, and largeVehiclesand use a seen table to skip duplicates
 end
 
+local queryResults = {}
+local min = math.min
+local max = math.max
+--- @param x1 number X of start point
+--- @param y1 number Y of start point
+--- @param z1 number Z of start point
+--- @param x2 number X of end point
+--- @param y2 number Y of end point
+--- @param z2 number Z of end point
+function spatialHash.queryShortLine(x1,y1,z1, x2,y2,z2)
+    local count = 0
+	local seen = {}
+
+	for i=1, #largeVehicles do
+		local vid = largeVehicles[i]
+		count = count + 1
+		queryResults[count] = vid
+		seen[vid] = true
+	end
+    
+    -- Calculate Cell Coordinates
+	local getCellCoord = posToCell
+    local cx1, cy1, cz1 = getCellCoord(x1), getCellCoord(y1), getCellCoord(z1)
+    local cx2, cy2, cz2 = getCellCoord(x2), getCellCoord(y2), getCellCoord(z2)
+
+    -- Do simple operation if both points are in the same cell
+    if cx1 == cx2 and cy1 == cy2 and cz1 == cz2 then
+        -- Check if cell exists in sparse grid
+		local cellID = cellKey(cx1, cy1, cz1)
+		local cellContents = grid[cellID]
+		if cellContents then
+			for i=1, #cellContents do
+				local vid = cellContents[i]
+				if not seen[vid] then
+					count = count + 1
+					queryResults[count] = vid
+					seen[vid] = true
+				end
+			end
+		end
+        return queryResults, count
+    end
+
+    -- More in-depth search if its crossed cells    
+    local minX, maxX = min(cx1, cx2), max(cx1, cx2)
+    local minY, maxY = min(cy1, cy2), max(cy1, cy2)
+    local minZ, maxZ = min(cz1, cz2), max(cz1, cz2)
+
+    for x = minX, maxX do
+        for y = minY, maxY do
+			for z = minZ, maxZ do
+				local cellID = cellKey(x, y, z)
+				local cellContents = grid[cellID]
+				if cellContents then
+					for i=1, #cellContents do
+						local vid = cellContents[i]
+						if not seen[vid] then
+							count = count + 1
+							queryResults[count] = vid
+							seen[vid] = true
+						end
+					end
+				end
+			end
+		end
+    end
+
+    return queryResults, count
+end
+
 spatialHash.queryCache = {} --TODO: Instead of wiping every tick, maybe make it only wipe when it changes
 --- Directly accesses a cell for if you only need 1 point. Way faster than queryVehiclesNearPoint
 --- @param x number

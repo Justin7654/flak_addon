@@ -47,9 +47,13 @@ function shrapnel.tickAll()
                 local bounds = nil
                 d.startProfile("determineBounds")
                 if vehicleInfo.collider_data.obb_bounds then
+                    d.startProfile("boundsFromOBB")
                     bounds = spatialHash.boundsFromOBB(pos, vehicleInfo.collider_data.obb_bounds)
+                    d.endProfile("boundsFromOBB")
                 else
+                    d.startProfile("boundsFromCenterRadius")
                     bounds = spatialHash.boundsFromCenterRadius(pos[13], pos[14], pos[15], vehicleInfo.collider_data.radius)
+                    d.endProfile("boundsFromCenterRadius")
                 end
                 d.endProfile("determineBounds")
                 d.startProfile("updateVehicleInGrid")
@@ -114,17 +118,24 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
     d.startProfile("tickChunk")
     --Get nearby vehicles using spatial hash
     d.startProfile("getNearby")
+    local futureX = chunk.positionX + chunk.fullVelocityX
+    local futureY = chunk.positionY + chunk.fullVelocityY
+    local futureZ = chunk.positionZ + chunk.fullVelocityZ
+    local nearbyCount
     if USE_SPATIAL_HASH then
         --Use spatial hashing to get the nearby vehicles
         d.startProfile("spatialHashQuery")
-        local nearbyVehicles = spatialHash.queryVehiclesInCell(chunk.positionX, chunk.positionY, chunk.positionZ)
+        --local nearbyVehicles = spatialHash.queryVehiclesInCell(chunk.positionX, chunk.positionY, chunk.positionZ)
+        nearbyVehicles, nearbyCount = spatialHash.queryShortLine(chunk.positionX, chunk.positionY, chunk.positionZ, futureX, futureY, futureZ)
         vehiclesToCheck = nearbyVehicles
         d.endProfile("spatialHashQuery")
 
         --Get the needed data for each vehicle
         d.startProfile("cacheVehicleData")
-        for _, vehicle in pairs(vehiclesToCheck) do
+        for v=1, nearbyCount do
+            local vehicle = vehiclesToCheck[v]
             -- Get the vehicle positions
+            ---TODO: This does not need to be done. We can cache this when updating the spatial hash grid instead
             if cachedVehiclePositions[vehicle] == nil then
                 -- If this vehicle hasn't been encountered yet, get its position
                 local vehicleMatrix, posSuccess = s.getVehiclePos(vehicle)
@@ -170,10 +181,9 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
     --Pre-decide which vehicles are close enough since they generally wont change between steps, and it wont matter much if it does change
     d.startProfile("broadPhase")
     local finalVehicles = {}
-    local futureX = chunk.positionX + chunk.fullVelocityX
-    local futureY = chunk.positionY + chunk.fullVelocityY
-    local futureZ = chunk.positionZ + chunk.fullVelocityZ
-    for i,vehicle_id in ipairs(vehiclesToCheck) do
+    --for i,vehicle_id in ipairs(vehiclesToCheck) do
+    for i=1, nearbyCount do
+        local vehicle_id = vehiclesToCheck[i]
         --Check if its more than 30m away from the final position of this tick
         local vehicleMatrix = vehiclePositions[vehicle_id]
         local posX, posY, posZ = vehicleMatrix[1], vehicleMatrix[2], vehicleMatrix[3]

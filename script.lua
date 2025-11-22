@@ -151,6 +151,14 @@ function onTick(game_ticks)
 		end
 	end
 
+	local hostpos, success = s.getPlayerPos(0)
+	if success then
+		shrapnel.explosion(hostpos, 5)
+	end
+	if isTickID(0, time.second*5) then
+		d.printProfile()
+	end
+
 	--Tick shrapnel
 	local shrapnelSkipped = shrapnel:tickAll()
 
