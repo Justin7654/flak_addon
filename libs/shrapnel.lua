@@ -24,6 +24,7 @@ function shrapnel.tickAll()
     if util.getTableLength(g_savedata.shrapnelChunks) == 0 and SKIP_TICK_ALL_IF_NO_SHRAPNEL then
         return true
     end
+    d.profilingTickUpdate()
     d.startProfile("tickAllShrapnel")
 
     local vehicleInfoTable = g_savedata.vehicleInfo
@@ -75,9 +76,7 @@ function shrapnel.tickAll()
                     --Check that its higher than the base altitude to exclude vehicles that cant be targeted by flak
                     local x,y,z = vehicleMatrix[13], vehicleMatrix[14], vehicleMatrix[15]
                     if y > g_savedata.settings.minAlt or not FILTER_GROUND_VEHICLES then
-                        d.startProfile("calculateVehicleVoxelZeroPosition")
                         local zeroPosSuccess,vehicleZeroPosition = shrapnel.calculateVehicleVoxelZeroPosition(vehicle_id)
-                        d.endProfile("calculateVehicleVoxelZeroPosition")
                         if zeroPosSuccess then
                             --This is a valid vehicle. Insert into the tables
                             local vehicleX, vehicleY, vehicleZ = matrix.positionFast(vehicleMatrix)
@@ -112,15 +111,15 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
     if chunk == nil then
         return d.printError("Shrapnel", "Failed to tick shrapnel chunk, chunk is nil")
     end
-    d.startProfile("tickShrapnelChunk")
+    d.startProfile("tickChunk")
     --Get nearby vehicles using spatial hash
+    d.startProfile("getNearby")
     if USE_SPATIAL_HASH then
-        d.startProfile("getNearby")
         --Use spatial hashing to get the nearby vehicles
-        d.startProfile("query")
+        d.startProfile("spatialHashQuery")
         local nearbyVehicles = spatialHash.queryVehiclesInCell(chunk.positionX, chunk.positionY, chunk.positionZ)
         vehiclesToCheck = nearbyVehicles
-        d.endProfile("query")
+        d.endProfile("spatialHashQuery")
 
         --Get the needed data for each vehicle
         d.startProfile("cacheVehicleData")
@@ -165,8 +164,8 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
             vehicleColliderRadiuses[vehicle] = cachedColliderRadiuses[vehicle]
         end
         d.endProfile("cacheVehicleData")
-        d.endProfile("getNearby")
     end
+    d.endProfile("getNearby")
 
     --Pre-decide which vehicles are close enough since they generally wont change between steps, and it wont matter much if it does change
     d.startProfile("broadPhase")
@@ -192,6 +191,7 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
     d.endProfile("broadPhase")
 
     --Start stepping the position and checking if its hit anything
+    d.startProfile("stepping")
     local hit = false
     local checks = 0
     local totalSteps = g_savedata.settings.shrapnelSubSteps
@@ -228,8 +228,10 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
         end
     end
     chunk.positionX, chunk.positionY, chunk.positionZ = futureX, futureY, futureZ
+    d.endProfile("stepping")
     
     --Shrapnel debug
+    d.startProfile("shrapnelMisc")
     if g_savedata.debug.shrapnel then
         if chunk.ui_id == nil then
             chunk.ui_id = s.getMapID()
@@ -259,7 +261,8 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
         end
         g_savedata.shrapnelChunks[chunk.id] = nil
     end
-    d.endProfile("tickShrapnelChunk")
+    d.endProfile("shrapnelMisc")
+    d.endProfile("tickChunk")
 end
 
 --- Spawns a explosion of shrapnel at the given position moving outwards
@@ -291,7 +294,7 @@ end
 --- @param velocityZ number The z velocity of the shrapnel in m/s
 function shrapnel.spawnShrapnel(position, velocityX, velocityY, velocityZ)
     if s.getGameSettings().vehicle_damage == false then
-        return
+        --return
     end
 
     --Increment the ID
@@ -344,6 +347,7 @@ function shrapnel.getVehicleVoxelAtWorldPosition(vehicle_id, x, y, z, vehicleZer
         vehiclePos = matrixExtras.invert(vehiclePos)
         if not success then
             d.printDebug("(shrapnel.getVehicleVoxelAtWorldPosition) Failed to get voxel zero position")
+            d.endProfile("getVehicleVoxelAtWorldPosition")
             return false, 0, 0, 0
         end
         --d.debugLabel("shrapnel", vehiclePos, "Zero position ("..vehicle_id..")", time.second)
@@ -464,5 +468,11 @@ function shrapnel.vehicleEligableForShrapnel(vehicle_id)
     end
     return true
 end
+
+shrapnel.vehicleEligableForShrapnel = d._hookFunctionForProfiling(shrapnel.vehicleEligableForShrapnel, "vehicleEligableForShrapnel")
+shrapnel.damageVehicleAtWorldPosition = d._hookFunctionForProfiling(shrapnel.damageVehicleAtWorldPosition, "damageVehicleAtWorldPosition")
+shrapnel.getVehicleVoxelAtWorldPosition = d._hookFunctionForProfiling(shrapnel.getVehicleVoxelAtWorldPosition, "getVehicleVoxelAtWorldPosition")
+shrapnel.checkVoxelExists = d._hookFunctionForProfiling(shrapnel.checkVoxelExists, "checkVoxelExists")
+shrapnel.calculateVehicleVoxelZeroPosition = d._hookFunctionForProfiling(shrapnel.calculateVehicleVoxelZeroPosition, "calculateVehicleVoxelZeroPosition")
 
 return shrapnel

@@ -285,21 +285,33 @@ function debugging.toggleDebug(mode)
     return false
 end
 
-profileStack = {} ---@type stackData[]
-profileData = {}
-profiling = true
-local profilingOverhead = 0.004
+local profileData = {}
+local profileSamples = {}
+local sampleCounter = 1
+local ticksProfiled = 0
+local profiling = true
+
 function debugging.startProfile(name)
     if profiling == false then return end
 
-    ---@class stackData
-    local stackData = {name = name, otherTime = 0, startTime = server.getTimeMillisec()}
-    table.insert(profileStack, stackData)
+    local t = server.getTimeMillisec()
+    --is_start, name, time
+    profileSamples[sampleCounter]   = true
+    profileSamples[sampleCounter+1] = name
+    profileSamples[sampleCounter+2] = t
+    sampleCounter = sampleCounter + 3
 end
 
 function debugging.endProfile(name)
     if profiling == false then return end
 
+    local t = server.getTimeMillisec()
+    --is_start, name, time
+    profileSamples[sampleCounter]   = false
+    profileSamples[sampleCounter+1] = name
+    profileSamples[sampleCounter+2] = t
+    sampleCounter = sampleCounter + 3
+    --[[
     local endTime = server.getTimeMillisec()
     local treeLocation = profileData
 
@@ -313,25 +325,99 @@ function debugging.endProfile(name)
 
             --Add otherTime to parent
             if i > 1 then
-                profileStack[i-1].otherTime = profileStack[i-1].otherTime + totalTime
+                profileStack[i-1].otherTime = profileStack[i-1].otherTime + totalTime + profilingOverhead
             end
 
             --Add time data to the current functions data
             if treeLocation[name] == nil then
-                treeLocation[name] = {self=0, total=0, children={}}
+                ---@class timeData
+                treeLocation[name] = {self=0, total=0, calls=0, children={}}
             end
             treeLocation[name].self = treeLocation[name].self + selfTime;
             treeLocation[name].total = treeLocation[name].total + totalTime;
+            treeLocation[name].calls = treeLocation[name].calls + 1;
 
             table.remove(profileStack, i)
             return
         else
             if treeLocation[stackData.name] == nil then
-                treeLocation[stackData.name] = {self=0, total=0, children={}}
+                treeLocation[stackData.name] = {self=0, total=0, calls=0, children={}}
             end
             treeLocation = treeLocation[stackData.name].children
         end
     end
+    --]]
+end
+
+--- To minimize overhead affecting profiling, we store samples in a flat array
+--- This function flushes the gathered samples into the profileData tree, replaying it from start to end
+--- as if its still being recorded live like it used to.
+--- This is also really fast compared to the old one for some reason, i dont see any noticable slowdown.
+function debugging.flushProfilingSamples()
+    if not profiling or sampleCounter == 1 then
+        return
+    end
+    local replayStack = {} -- { {name, startTime, otherTime} }
+
+    for i = 1, sampleCounter - 1, 3 do
+        local is_start = profileSamples[i]
+        local name     = profileSamples[i + 1]
+        local time     = profileSamples[i + 2]
+
+        if is_start then
+            replayStack[#replayStack + 1] = { name = name, startTime = time, otherTime = 0 }
+        else
+            -- find matching frame from top of stack down
+            local idx
+            for j = #replayStack, 1, -1 do
+                if replayStack[j].name == name then
+                    idx = j
+                    break
+                end
+            end
+            if idx ~= nil then
+                local frame = replayStack[idx]
+                local totalTime = time - frame.startTime
+                local selfTime  = totalTime - frame.otherTime
+                if selfTime < 0 then selfTime = 0 end
+
+                -- walk tree according to current stack path
+                local treeLocation = profileData
+                for k = 1, idx - 1 do
+                    local ancestorName = replayStack[k].name
+                    if treeLocation[ancestorName] == nil then
+                        treeLocation[ancestorName] = { self = 0, total = 0, calls = 0, children = {} }
+                    end
+                    treeLocation = treeLocation[ancestorName].children
+                end
+
+                if treeLocation[name] == nil then
+                    treeLocation[name] = { self = 0, total = 0, calls = 0, children = {} }
+                end
+                treeLocation[name].self  = treeLocation[name].self  + selfTime
+                treeLocation[name].total = treeLocation[name].total + totalTime
+                treeLocation[name].calls = treeLocation[name].calls + 1
+
+                -- add total time to parent otherTime
+                if idx > 1 then
+                    replayStack[idx - 1].otherTime = replayStack[idx - 1].otherTime + totalTime
+                end
+
+                table.remove(replayStack, idx)
+            end
+        end
+    end
+
+    --clear samples for next tick
+    for i = 1, #profileSamples do
+        profileSamples[i] = nil
+    end
+    sampleCounter = 1 --MUST RESET OR VERY BAD THINGS HAPPEN! (Also would cause a memory leak if didnt reset)
+end
+
+-- Call if you want this tick to be included. Call when you know somethings happening this tick
+function debugging.profilingTickUpdate()
+    ticksProfiled = ticksProfiled + 1
 end
 
 function debugging.printProfile()
@@ -340,21 +426,30 @@ function debugging.printProfile()
     function processAggregate(children)
         for name,v in pairs(children) do
             if aggergatedProfileData[name] == nil then
-                aggergatedProfileData[name] = {self=0, total=0}
+                aggergatedProfileData[name] = {self=0, total=0, calls=0}
             end
             aggergatedProfileData[name].self = aggergatedProfileData[name].self + v.self
             aggergatedProfileData[name].total = aggergatedProfileData[name].total + v.total
+            aggergatedProfileData[name].calls = aggergatedProfileData[name].calls + v.calls
             processAggregate(v.children)
         end
     end
     processAggregate(profileData)
     aggergatedProfileData = util.sortNamedTable(aggergatedProfileData, function(a, b) return a.self > b.self end)
 
+    -- Calculate average times per tick in the aggergatedProfileData
+    for _, data in pairs(aggergatedProfileData) do
+        data.avgSelf = math.floor((data.self / ticksProfiled) * 100 + 0.5) / 100 --Rounded to 0.01
+        data.avgTotal = math.floor((data.total / ticksProfiled) * 100 + 0.5) / 100 --Rounded to 0.01
+        data.avgCalls = math.floor(data.calls / ticksProfiled)
+    end
+
     --Display the aggergated data
     local outputString = "Aggergated Data:"
     for _, timeData in ipairs(aggergatedProfileData) do
         if timeData.self > 0 then
-            outputString = outputString.."\n"..tostring(timeData.name)..": "..tostring(math.floor(timeData.self + 0.5)).."ms"
+            outputString = outputString.."\n"..tostring(timeData.name)..": "..tostring(timeData.avgSelf).."ms/tick"..
+            " ("..tostring(timeData.avgCalls).." calls/tick)"
         end
     end
     
@@ -366,7 +461,8 @@ function debugging.printProfile()
             local isLast = (i == #sortedTree)
             if timeData.total > 0 then
                 -- Draw the branch character
-                outputString = outputString.."\n"..prefix.."|->"..timeData.name..": "..tostring(math.floor(timeData.total + 0.5)).."ms"
+                local avgTotal = math.floor((timeData.total / ticksProfiled) * 100 + 0.5) / 100 --Rounded to 0.01
+                outputString = outputString.."\n"..prefix.."|->"..timeData.name..": "..tostring(avgTotal).."ms"
                 
                 -- Calculate unaccounted time if there are children
                 local hasChildren = false
@@ -380,9 +476,10 @@ function debugging.printProfile()
                     -- Determine the new prefix for children
                     local newPrefix = prefix .. "|  " --(isLast and "   " or "|  ")
                     printTree(timeData.children, indent+1, newPrefix)
-                    local unknown = timeData.total - childrenTotal
+                    local childrenAvgTotal = math.floor((childrenTotal / ticksProfiled) * 100 + 0.5) / 100 --Rounded to 0.01
+                    local unknown = avgTotal - childrenAvgTotal
                     if unknown > 0 then
-                        outputString = outputString.."\n"..newPrefix.."|->unknown: "..tostring(math.floor(unknown + 0.5)).."ms"
+                        outputString = outputString.."\n"..newPrefix.."|->unknown: "..tostring(unknown).."ms"
                     end
                 end
             end
@@ -402,33 +499,51 @@ end
 
 function debugging.clearProfile()
     profileData = {}
-    profileStack = {}
+    for i = 1, #profileSamples do
+        profileSamples[i] = nil
+    end
+    sampleCounter = 1
+    ticksProfiled = 0
     d.printDebug("Cleared profile data")
 end
 
-function debugging.checkOpenStacks()
-    for i in pairs(profileStack) do
-        d.printWarning("Open stack: ",profileStack[i].name)
+local originalFunctionCopys = {startProfile=debugging.startProfile, endProfile=debugging.endProfile}
+--- Overwrites startProfile and endProfile with empty functions to reduce overhead
+function debugging.disableProfiling()
+    for i = 1, #profileSamples do
+        profileSamples[i] = nil
+    end
+    sampleCounter = 1
+    debugging.startProfile = function() end
+    debugging.endProfile = function() end
+end
+
+function debugging.enableProfiling()
+    debugging.startProfile = originalFunctionCopys.startProfile
+    debugging.endProfile = originalFunctionCopys.endProfile
+
+end
+
+function debugging._hookFunctionForProfiling(func, name)
+    debug.log("FLAK | Hooking function "..name)
+    local originalFunction = func
+    return function(...)
+        debugging.startProfile(name)
+        local results = {originalFunction(...)}
+        debugging.endProfile(name)
+        return table.unpack(results)
     end
 end
 
 if profiling then
-    function hookFunc(func, name)
-        debug.log("FLAK | Hooking function "..name)
-        local originalFunction = func
-        return function(...)
-            debugging.startProfile(name)
-            local results = {originalFunction(...)}
-            debugging.endProfile(name)
-            return table.unpack(results)
-        end
-    end
     --Hook some of the functions in server
     for key, value in pairs(server) do
         if type(value) == "function" and key ~= "getTimeMillisec" and key ~= "announce" then
-            server[key] = hookFunc(value, "server."..key)
+            server[key] = debugging._hookFunctionForProfiling(value, "server."..key)
         end
     end
+else
+    debugging.disableProfiling()
 end
 
 return debugging

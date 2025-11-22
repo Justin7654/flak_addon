@@ -105,7 +105,7 @@ function onCreate(is_world_create)
 	boundsScanner.setBudget(boundsScanner.calculateBudgetTime(g_savedata.settings.scanningBudget))
 end
 
----@param game_ticks number the number of ticks since the last onTick call (normally 1, while sleeping 400.)
+---@param game_ticks number the number of ticks since the last onTick call (normally 1, while sleeping 400)
 function onTick(game_ticks)
 	--s.announce("[]", g_savedata.tickCounter)
     g_savedata.tickCounter = g_savedata.tickCounter + 1
@@ -117,6 +117,8 @@ function onTick(game_ticks)
 		--Check if its time to update target data
 		local updated_pos = false
 		if isTickID(flak.tick_id, updateRate) then
+			---If the target changes to another player in MP, it wont get cleared resulting in a huge leading error possibly leading to
+			---infinity/NaN issues. TODO: Fix
 			local targetMatrix = flakMain.getFlakTarget(flak)
 			if targetMatrix ~= nil then
 				aiming.addPositionData(flak.targetPositionData, targetMatrix)
@@ -170,6 +172,7 @@ function onTick(game_ticks)
 	taskService:handleTasks()
 	d.tickDebugs()
 	benchmark.tick()
+	d.flushProfilingSamples()
 end
 
 function onVehicleLoad(vehicle_id)
@@ -431,8 +434,6 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		g_savedata.debug.chat = true
 		d.clearProfile()
 		g_savedata.debug.chat = beforeState
-	elseif command == "checkprofile" then
-		debugging.checkOpenStacks()
 	elseif command == "viewscan" then
 		scan_id = tonumber(args[1]) or -1
 		g_savedata.debugBoundsScanState = scan_id
