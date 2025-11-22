@@ -32,6 +32,7 @@ function shrapnel.tickAll()
     local vehicleZeroPositions = {}
     local vehicleColliderRadiuses = {}
     if USE_SPATIAL_HASH then
+        d.startProfile("spatialHashUpdate")
         cachedVehiclePositions = {}
         cachedZeroPositions = {}
         cachedColliderRadiuses = {}
@@ -43,14 +44,19 @@ function shrapnel.tickAll()
 	    		local pos = s.getVehiclePos(vehicle_id)
 	    		local vehicleInfo = g_savedata.vehicleInfo[vehicle_id]
                 local bounds = nil
+                d.startProfile("determineBounds")
                 if vehicleInfo.collider_data.obb_bounds then
                     bounds = spatialHash.boundsFromOBB(pos, vehicleInfo.collider_data.obb_bounds)
                 else
                     bounds = spatialHash.boundsFromCenterRadius(pos[13], pos[14], pos[15], vehicleInfo.collider_data.radius)
                 end
+                d.endProfile("determineBounds")
+                d.startProfile("updateVehicleInGrid")
                 spatialHash.updateVehicleInGrid(vehicle_id, bounds)
+                d.endProfile("updateVehicleInGrid")
 	    	end
 	    end
+        d.endProfile("spatialHashUpdate")
     else
         -- Decide the vehicles the each shrapnel will check, to minimize the checks needed to be done by each individual shrapnel
         for _,vehicle_id in ipairs(g_savedata.loadedVehicles) do
@@ -87,9 +93,11 @@ function shrapnel.tickAll()
     end
 
     -- Go through all the shrapnel chunks and tick them
+    d.startProfile("tickChunks")
     for _, chunk in pairs(g_savedata.shrapnelChunks) do
         shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, vehicleZeroPositions, vehicleColliderRadiuses)
     end
+    d.endProfile("tickChunks")
     d.endProfile("tickAllShrapnel")
     return false
 end
@@ -104,14 +112,18 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
     if chunk == nil then
         return d.printError("Shrapnel", "Failed to tick shrapnel chunk, chunk is nil")
     end
-    --d.startProfile("tickShrapnelChunk")
+    d.startProfile("tickShrapnelChunk")
     --Get nearby vehicles using spatial hash
     if USE_SPATIAL_HASH then
+        d.startProfile("getNearby")
         --Use spatial hashing to get the nearby vehicles
+        d.startProfile("query")
         local nearbyVehicles = spatialHash.queryVehiclesInCell(chunk.positionX, chunk.positionY, chunk.positionZ)
         vehiclesToCheck = nearbyVehicles
+        d.endProfile("query")
 
         --Get the needed data for each vehicle
+        d.startProfile("cacheVehicleData")
         for _, vehicle in pairs(vehiclesToCheck) do
             -- Get the vehicle positions
             if cachedVehiclePositions[vehicle] == nil then
@@ -152,9 +164,12 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
             end
             vehicleColliderRadiuses[vehicle] = cachedColliderRadiuses[vehicle]
         end
+        d.endProfile("cacheVehicleData")
+        d.endProfile("getNearby")
     end
 
     --Pre-decide which vehicles are close enough since they generally wont change between steps, and it wont matter much if it does change
+    d.startProfile("broadPhase")
     local finalVehicles = {}
     local futureX = chunk.positionX + chunk.fullVelocityX
     local futureY = chunk.positionY + chunk.fullVelocityY
@@ -174,6 +189,7 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
             end
         end
     end
+    d.endProfile("broadPhase")
 
     --Start stepping the position and checking if its hit anything
     local hit = false
@@ -243,7 +259,7 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
         end
         g_savedata.shrapnelChunks[chunk.id] = nil
     end
-    --d.endProfile("tickShrapnelChunk")
+    d.endProfile("tickShrapnelChunk")
 end
 
 --- Spawns a explosion of shrapnel at the given position moving outwards

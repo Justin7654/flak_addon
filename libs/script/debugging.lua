@@ -213,50 +213,6 @@ function debugging.freeDebugLabel(peer_id, ui_id)
     table.insert(g_savedata.debugLabelUI, ui_id)
 end
 
---- @param id any the id of the voxel map
---- @param transform_matrix SWMatrix the matrix to place the voxel map at
---- @param debugMode string the debug that needs to be enabled
-function debugging.setVoxelMap(id, transform_matrix, debugMode)
-    if not g_savedata.debug[debugMode] and debugMode ~= "none" then
-        return
-    end
-    debugging.printDebug("Setting voxel map ",id)
-    if g_savedata.debugVoxelMaps[id] ~= nil then
-        local is_success = s.moveVehicle(g_savedata.debugVoxelMaps[id], transform_matrix)
-        d.printDebug("Move success: ",tostring(is_success))
-        return
-    end
-    d.printDebug("Spawning")
-    local addonIndex = s.getAddonIndex()
-    local locationIndex = s.getLocationIndex(addonIndex, "debugVoxelMap")
-    local componentIndex = 0
-    local componentData, is_success = s.getLocationComponentData(addonIndex, locationIndex, componentIndex)
-    if not is_success then
-        debugging.printWarning("Failed to get component data for voxel map ",id,". Addon index: ",addonIndex," Location index: ",locationIndex," Component index: ",componentIndex)
-        return
-    end
-    local componentID = componentData.id
-    local primary_vehicle_id, success, vehicle_ids, group_id = s.spawnAddonVehicle(transform_matrix, addonIndex, componentID)
-    g_savedata.debugVoxelMaps[id] = primary_vehicle_id
-    if success then
-        debugging.printDebug("Spawned voxel map ",id)
-    else
-        debugging.printWarning("Failed to spawn voxel map ",id)
-    end
-end
-
-function debugging.cleanVoxelMap(id)
-    if g_savedata.debugVoxelMaps[id] then
-        local is_success = s.despawnVehicle(g_savedata.debugVoxelMaps[id], true)
-        if is_success then
-            g_savedata.debugVoxelMaps[id] = nil
-            debugging.printDebug("Despawned voxel map ",id)
-        else
-            debugging.printWarning("Failed to despawn voxel map ",id)
-        end
-    end
-end
-
 function debugging._argsToString(...)
     local args = {...}
     local str = ""
@@ -331,7 +287,8 @@ end
 
 profileStack = {} ---@type stackData[]
 profileData = {}
-profiling = false
+profiling = true
+local profilingOverhead = 0.004
 function debugging.startProfile(name)
     if profiling == false then return end
 
@@ -350,6 +307,14 @@ function debugging.endProfile(name)
         if stackData.name == name then
             local totalTime = (endTime-stackData.startTime)
             local selfTime = totalTime - stackData.otherTime
+
+            --Subtract overhead from self time
+            selfTime = math.max(0, selfTime - profilingOverhead)
+
+            --Add otherTime to parent
+            if i > 1 then
+                profileStack[i-1].otherTime = profileStack[i-1].otherTime + totalTime
+            end
 
             --Add time data to the current functions data
             if treeLocation[name] == nil then
@@ -389,28 +354,42 @@ function debugging.printProfile()
     local outputString = "Aggergated Data:"
     for _, timeData in ipairs(aggergatedProfileData) do
         if timeData.self > 0 then
-            outputString = outputString.."\n"..tostring(timeData.name)..": "..tostring(timeData.self).."ms"
+            outputString = outputString.."\n"..tostring(timeData.name)..": "..tostring(math.floor(timeData.self + 0.5)).."ms"
         end
     end
     
     --Display a tree visualization of the data
-    local function printTree(tree, indent)
+    local function printTree(tree, indent, prefix)
         local sortedTree = util.sortNamedTable(tree, function(a, b) return a.total > b.total end)
 
         for i, timeData in pairs(sortedTree) do
-            lineCharacter = "|"
-            if #sortedTree == i then
-                lineCharacter = "\\"
-            end
+            local isLast = (i == #sortedTree)
             if timeData.total > 0 then
-                timeData.total = timeData.total
-                outputString = outputString.."\n"..string.rep("   ", indent).."|->"..timeData.name..": "..tostring(timeData.total).."ms"
-                printTree(timeData.children, indent+1)
+                -- Draw the branch character
+                outputString = outputString.."\n"..prefix.."|->"..timeData.name..": "..tostring(math.floor(timeData.total + 0.5)).."ms"
+                
+                -- Calculate unaccounted time if there are children
+                local hasChildren = false
+                local childrenTotal = 0
+                for _, child in pairs(timeData.children) do
+                    hasChildren = true
+                    childrenTotal = childrenTotal + child.total
+                end
+                
+                if hasChildren then
+                    -- Determine the new prefix for children
+                    local newPrefix = prefix .. "|  " --(isLast and "   " or "|  ")
+                    printTree(timeData.children, indent+1, newPrefix)
+                    local unknown = timeData.total - childrenTotal
+                    if unknown > 0 then
+                        outputString = outputString.."\n"..newPrefix.."|->unknown: "..tostring(math.floor(unknown + 0.5)).."ms"
+                    end
+                end
             end
         end
     end
     outputString = outputString.."\n \nTree data:"
-    printTree(profileData, 0)
+    printTree(profileData, 0, "")
     
     --Print the data to chat
     server.announce("[Profile]", outputString)
@@ -442,18 +421,6 @@ if profiling then
             local results = {originalFunction(...)}
             debugging.endProfile(name)
             return table.unpack(results)
-        end
-    end
-    --Hook all the functions in matrix
-    for key, value in pairs(matrix) do
-        if type(value) == "function" then
-            matrix[key] = hookFunc(value, "matrix."..key)
-        end
-    end
-    --Hook all the functions in math
-    for key, value in pairs(math) do
-        if type(value) == "function" then
-            math[key] = hookFunc(value, "math."..key)
         end
     end
     --Hook some of the functions in server
