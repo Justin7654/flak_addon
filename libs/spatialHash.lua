@@ -181,6 +181,12 @@ function spatialHash.updateVehicleInGrid(vehicle_id, bounds)
 	spatialHash.addVehicleToGrid(vehicle_id, bounds)
 end
 
+function spatialHash.finalizeGridUpdate()
+	-- Clear query cache
+	spatialHash.queryCache = {}
+	queryResults = {}
+end
+
 --- Query nearby vehicles around a point. Returns an array of candidate vehicle IDs (deduped) and the raw count.
 --- @param x number
 --- @param y number
@@ -234,76 +240,85 @@ function spatialHash.queryLineFast(x1,y1,z1, x2,y2,z2)
 end
 
 local queryResults = {}
+local querySeen = {}
 local min = math.min
 local max = math.max
+--- Queries for vehicles along a line between 2 points. The distance between them must be less than the cell size, otherwise
+--- it will return inaccurate results
 --- @param x1 number X of start point
 --- @param y1 number Y of start point
 --- @param z1 number Z of start point
 --- @param x2 number X of end point
 --- @param y2 number Y of end point
 --- @param z2 number Z of end point
+--- @return table<number> results array of vehicle IDs
+--- @return number count number of vehicle IDs in results. Must use this to loop through the results to prevent overreading
 function spatialHash.queryShortLine(x1,y1,z1, x2,y2,z2)
     local count = 0
-	local seen = {}
-
-	for i=1, #largeVehicles do
-		local vid = largeVehicles[i]
-		count = count + 1
-		queryResults[count] = vid
-		seen[vid] = true
-	end
+	local results = queryResults
     
     -- Calculate Cell Coordinates
-	local getCellCoord = posToCell
-    local cx1, cy1, cz1 = getCellCoord(x1), getCellCoord(y1), getCellCoord(z1)
-    local cx2, cy2, cz2 = getCellCoord(x2), getCellCoord(y2), getCellCoord(z2)
+    local cx1, cy1, cz1 = posToCell(x1), posToCell(y1), posToCell(z1)
+    local cx2, cy2, cz2 = posToCell(x2), posToCell(y2), posToCell(z2)
 
     -- Do simple operation if both points are in the same cell
     if cx1 == cx2 and cy1 == cy2 and cz1 == cz2 then
-        -- Check if cell exists in sparse grid
+        -- Check if the cell exists
 		local cellID = cellKey(cx1, cy1, cz1)
 		local cellContents = grid[cellID]
 		if cellContents then
+			-- Add the cell contents to results
 			for i=1, #cellContents do
-				local vid = cellContents[i]
-				if not seen[vid] then
-					count = count + 1
-					queryResults[count] = vid
-					seen[vid] = true
-				end
+				count = count + 1
+				results[count] = cellContents[i]
 			end
 		end
-        return queryResults, count
-    end
-
-    -- More in-depth search if its crossed cells    
-    local minX, maxX = min(cx1, cx2), max(cx1, cx2)
-    local minY, maxY = min(cy1, cy2), max(cy1, cy2)
-    local minZ, maxZ = min(cz1, cz2), max(cz1, cz2)
-
-    for x = minX, maxX do
-        for y = minY, maxY do
-			for z = minZ, maxZ do
-				local cellID = cellKey(x, y, z)
-				local cellContents = grid[cellID]
-				if cellContents then
-					for i=1, #cellContents do
-						local vid = cellContents[i]
-						if not seen[vid] then
-							count = count + 1
-							queryResults[count] = vid
-							seen[vid] = true
+    else
+    	-- More in-depth search if its crossed cells
+		local seen = querySeen 
+    	local minX, maxX = min(cx1, cx2), max(cx1, cx2)
+    	local minY, maxY = min(cy1, cy2), max(cy1, cy2)
+    	local minZ, maxZ = min(cz1, cz2), max(cz1, cz2)
+		
+    	for x = minX, maxX do
+    	    for y = minY, maxY do
+				for z = minZ, maxZ do
+					-- Check if the cell exists
+					local cellID = cellKey(x, y, z)
+					local cellContents = grid[cellID]
+					if cellContents then
+						-- Add the cell contents to results
+						for i=1, #cellContents do
+							local vid = cellContents[i]
+							if not seen[vid] then
+								count = count + 1
+								results[count] = vid
+								seen[vid] = true
+							end
 						end
 					end
 				end
 			end
-		end
-    end
+    	end
 
-    return queryResults, count
+		-- Clear the seen table for the next run
+		-- seen only has to be used in this search type because large vehicles are never in the grid and theres never
+		-- duplicates in cells.
+		for i=1, count do
+			seen[results[i]] = nil
+		end
+	end
+
+	-- Add large vehicles
+	for vid,_ in pairs(largeVehicles) do
+		count = count + 1
+		results[count] = vid
+	end
+
+    return results, count
 end
 
-spatialHash.queryCache = {} --TODO: Instead of wiping every tick, maybe make it only wipe when it changes
+spatialHash.queryCache = {}
 --- Directly accesses a cell for if you only need 1 point. Way faster than queryVehiclesNearPoint
 --- @param x number
 --- @param y number

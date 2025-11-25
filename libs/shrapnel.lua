@@ -43,22 +43,17 @@ function shrapnel.tickAll()
 	    for i, vehicle_id in ipairs(g_savedata.loadedVehicles) do
 	    	if shrapnel.vehicleEligableForShrapnel(vehicle_id) then
 	    		local pos = s.getVehiclePos(vehicle_id)
-	    		local vehicleInfo = g_savedata.vehicleInfo[vehicle_id]
+	    		local vehicleInfo = vehicleInfoTable[vehicle_id]
                 local bounds = nil
-                d.startProfile("determineBounds")
+                cachedVehiclePositions[vehicle_id] = {pos[13], pos[14], pos[15]}
+                
                 if vehicleInfo.collider_data.obb_bounds then
-                    d.startProfile("boundsFromOBB")
                     bounds = spatialHash.boundsFromOBB(pos, vehicleInfo.collider_data.obb_bounds)
-                    d.endProfile("boundsFromOBB")
                 else
-                    d.startProfile("boundsFromCenterRadius")
                     bounds = spatialHash.boundsFromCenterRadius(pos[13], pos[14], pos[15], vehicleInfo.collider_data.radius)
-                    d.endProfile("boundsFromCenterRadius")
                 end
-                d.endProfile("determineBounds")
-                d.startProfile("updateVehicleInGrid")
+                
                 spatialHash.updateVehicleInGrid(vehicle_id, bounds)
-                d.endProfile("updateVehicleInGrid")
 	    	end
 	    end
         d.endProfile("spatialHashUpdate")
@@ -115,7 +110,6 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
     if chunk == nil then
         return d.printError("Shrapnel", "Failed to tick shrapnel chunk, chunk is nil")
     end
-    d.startProfile("tickChunk")
     --Get nearby vehicles using spatial hash
     d.startProfile("getNearby")
     local futureX = chunk.positionX + chunk.fullVelocityX
@@ -137,14 +131,8 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
             -- Get the vehicle positions
             ---TODO: This does not need to be done. We can cache this when updating the spatial hash grid instead
             if cachedVehiclePositions[vehicle] == nil then
-                -- If this vehicle hasn't been encountered yet, get its position
-                local vehicleMatrix, posSuccess = s.getVehiclePos(vehicle)
-                if posSuccess then
-                    cachedVehiclePositions[vehicle] = {matrix.positionFast(vehicleMatrix)}
-                else
-                    cachedVehiclePositions[vehicle] = {0,0,0}
-                    d.printWarning("line_", SSSWTOOL_SRC_LINE,": Shrapnel chunk failed to get vehicle position for vehicle ",vehicle)
-                end
+                -- Remove fully later if nothing breaks
+                d.printError("Shrapnel", "Vehicle position was no cached for vehicle ",vehicle)
             end
             vehiclePositions[vehicle] = cachedVehiclePositions[vehicle]
             
@@ -272,7 +260,6 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
         g_savedata.shrapnelChunks[chunk.id] = nil
     end
     d.endProfile("shrapnelMisc")
-    d.endProfile("tickChunk")
 end
 
 --- Spawns a explosion of shrapnel at the given position moving outwards

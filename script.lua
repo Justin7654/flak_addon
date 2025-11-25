@@ -18,6 +18,12 @@ spatialHash = require("libs.spatialHash")
 boundsScanner = require("libs.boundsScanner")
 benchmark = require("libs.benchmark")
 
+spatialHash.addVehicleToGrid = d._hookFunctionForProfiling(spatialHash.addVehicleToGrid, "addVehicleToGrid")
+spatialHash.removeVehicleFromGrid = d._hookFunctionForProfiling(spatialHash.removeVehicleFromGrid, "removeVehicleFromGrid")
+spatialHash.updateVehicleInGrid = d._hookFunctionForProfiling(spatialHash.updateVehicleInGrid, "updateVehicleInGrid")
+spatialHash.boundsFromCenterRadius = d._hookFunctionForProfiling(spatialHash.boundsFromCenterRadius, "boundsFromCenterRadius")
+spatialHash.boundsFromOBB = d._hookFunctionForProfiling(spatialHash.boundsFromOBB, "boundsFromOBB")
+
 -- Data
 g_savedata = {
 	tickCounter = 0,
