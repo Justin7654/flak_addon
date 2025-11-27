@@ -339,8 +339,9 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		g_savedata.settings.flakShellSpeed = tonumber(args[1])
 		s.announce("[Flak Commands]", "Flak shell speed set to "..g_savedata.settings.flakShellSpeed.." m/s by "..s.getPlayerName(user_peer_id))
 	elseif command == "checkowners" then
-		for vehicle_id, info in pairs(g_savedata.vehicleInfo) do
-			if s.getVehicleSimulating(vehicle_id) then
+		for vehicle_id in ipairs(g_savedata.loadedVehicles) do
+			if g_savedata.vehicleInfo[vehicle_id] ~= nil then
+				local info = g_savedata.vehicleInfo[vehicle_id]
 				local position = s.getVehiclePos(vehicle_id)
 				d.debugLabel("none", position, tostring(info.owner), 5*time.second)
 			end

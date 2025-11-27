@@ -133,7 +133,7 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
             ---TODO: This does not need to be done. We can cache this when updating the spatial hash grid instead
             if cachedVehiclePositions[vehicle] == nil then
                 -- Remove fully later if nothing breaks
-                d.printError("Shrapnel", "Vehicle position was no cached for vehicle ",vehicle)
+                d.printError("Shrapnel", "Vehicle position was not cached for vehicle ",vehicle)
             end
             vehiclePositions[vehicle] = cachedVehiclePositions[vehicle]
             

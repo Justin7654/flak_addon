@@ -489,7 +489,7 @@ function debugging.printProfile()
     printTree(profileData, 0, "")
     
     --Print the data to chat
-    server.announce("[Profile]", outputString)
+    --server.announce("[Profile]", outputString)
 
     --Print the data to the console (it doesn't support new lines)
     for line in string.gmatch(outputString, "[^\r\n]+") do

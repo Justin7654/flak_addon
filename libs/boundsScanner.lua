@@ -119,6 +119,7 @@ function boundsScanner.tick()
         if radius == 0 then
             if shrapnel.checkVoxelExists(chosenScan.vehicle_id, center_x, center_y, center_z) then
                 on_hit(0,0,0)
+                best_sqdist = 0.25 --on_hit sets it to 0 causing issues in future systems
             end
             remaining = remaining - 1
             radius = 1

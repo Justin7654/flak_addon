@@ -225,20 +225,6 @@ function spatialHash.queryVehiclesNearPoint(x,y,z, queryRadius)
 	return results, #results
 end
 
---- Query for a line where the start is (x1,y1,z1) and the endpoint is (x2,y2,z2)
---- Only works if the distance between the two points is less than the cell size, as it doesn't
---- actually traverse between them. It returns the bucket contents at the start and end points.
---- TODO: Actually write
-function spatialHash.queryLineFast(x1,y1,z1, x2,y2,z2)
-	-- Get the cellKey at the start and end
-
-	-- If the start and end are in the same cell, return queryVehiclesInCell
-
-	-- Otherwise, get the contents of both cells
-
-	-- Loop through startCell, endCell, and largeVehiclesand use a seen table to skip duplicates
-end
-
 local queryResults = {}
 local querySeen = {}
 local min = math.min
