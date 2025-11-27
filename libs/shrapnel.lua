@@ -12,9 +12,11 @@ local ALWAYS_CHECK_COLLISION_DEBUG = false
 local DONT_DESTROY_ON_HIT_DEBUG = false
 local USE_SPATIAL_HASH = true
 
-cachedVehiclePositions = {}
-cachedZeroPositions = {}
-cachedColliderRadiuses = {}
+local cachedVehiclePositions = {}
+local cachedZeroPositions = {}
+local cachedColliderRadiuses = {}
+local eligibleShrapnelVehicles = nil
+local eligibleNextUpdateTick = 0
 
 --- Ticks all shrapnel objects
 --- Made to replace the system of using task service to loop it, since that is slow, and makes some optimizations impossible or complicated
@@ -37,13 +39,27 @@ function shrapnel.tickAll()
         cachedVehiclePositions = {}
         cachedZeroPositions = {}
         cachedColliderRadiuses = {}
-        spatialHash.queryCache = {}
-        UPDATE_RATE = 1
-        --Update the spatial hash grid for loaded vehicles
-	    for i, vehicle_id in ipairs(g_savedata.loadedVehicles) do
-	    	if shrapnel.vehicleEligableForShrapnel(vehicle_id) then
-	    		local pos = s.getVehiclePos(vehicle_id)
-	    		local vehicleInfo = vehicleInfoTable[vehicle_id]
+
+        -- Every 20 ticks build a list of all eligble vehicles, since g_savedata.loadedVehicles can get quite large especially with bombers.
+        -- It doesn't actually take that long even with large amounts of loadedVehicles but vehicleEligibleForShrapnel() takes up most of the time
+        -- updating spatial hash so this is a easy way to reduce the spatial hash update overhead
+        if eligibleShrapnelVehicles == nil or g_savedata.tickCounter >= eligibleNextUpdateTick then
+            d.startProfile("eligibleVehicleListUpdate")
+            eligibleShrapnelVehicles = {}
+            for _,vehicle_id in ipairs(g_savedata.loadedVehicles) do
+                if shrapnel.vehicleEligibleForShrapnel(vehicle_id) then
+                    table.insert(eligibleShrapnelVehicles, vehicle_id)
+                end
+            end
+            eligibleNextUpdateTick = g_savedata.tickCounter + 20
+            d.endProfile("eligibleVehicleListUpdate")
+        end
+
+        -- Update the spatial hash grid for all loaded vehicles who are eligible for shrapnel
+	    for i, vehicle_id in ipairs(eligibleShrapnelVehicles) do
+	    	local pos, success = s.getVehiclePos(vehicle_id)
+            if success then --Vehicle might have despawned since we last built the eligible list
+	    	    local vehicleInfo = vehicleInfoTable[vehicle_id]
                 local bounds = nil
                 cachedVehiclePositions[vehicle_id] = {pos[13], pos[14], pos[15]}
                 
@@ -54,7 +70,7 @@ function shrapnel.tickAll()
                 end
                 
                 spatialHash.updateVehicleInGrid(vehicle_id, bounds)
-	    	end
+            end
 	    end
         spatialHash.finalizeGridUpdate()
         d.endProfile("spatialHashUpdate")
@@ -116,19 +132,19 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
     local futureX = chunk.positionX + chunk.fullVelocityX
     local futureY = chunk.positionY + chunk.fullVelocityY
     local futureZ = chunk.positionZ + chunk.fullVelocityZ
+    local nearbyVehicles
     local nearbyCount
     if USE_SPATIAL_HASH then
         --Use spatial hashing to get the nearby vehicles
         d.startProfile("spatialHashQuery")
         --local nearbyVehicles = spatialHash.queryVehiclesInCell(chunk.positionX, chunk.positionY, chunk.positionZ)
         nearbyVehicles, nearbyCount = spatialHash.queryShortLine(chunk.positionX, chunk.positionY, chunk.positionZ, futureX, futureY, futureZ)
-        vehiclesToCheck = nearbyVehicles
         d.endProfile("spatialHashQuery")
 
         --Get the needed data for each vehicle
         d.startProfile("cacheVehicleData")
         for v=1, nearbyCount do
-            local vehicle = vehiclesToCheck[v]
+            local vehicle = nearbyVehicles[v]
             -- Get the vehicle positions
             ---TODO: This does not need to be done. We can cache this when updating the spatial hash grid instead
             if cachedVehiclePositions[vehicle] == nil then
@@ -172,7 +188,7 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
     local finalVehicles = {}
     --for i,vehicle_id in ipairs(vehiclesToCheck) do
     for i=1, nearbyCount do
-        local vehicle_id = vehiclesToCheck[i]
+        local vehicle_id = nearbyVehicles[i]
         --Check if its more than 30m away from the final position of this tick
         local vehicleMatrix = vehiclePositions[vehicle_id]
         local posX, posY, posZ = vehicleMatrix[1], vehicleMatrix[2], vehicleMatrix[3]
@@ -238,10 +254,10 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
             chunk.ui_id = s.getMapID()
         end
         local x, y, z = chunk.positionX, chunk.positionY, chunk.positionZ
-        local text = "Shrapnel\n"..#vehiclesToCheck.." | "..#finalVehicles.." | "..checks
+        local text = "Shrapnel\n"..nearbyCount.." | "..#finalVehicles.." | "..checks
         if #finalVehicles > 0 then
             text = "!!!!!!!!!\n" .. text
-        elseif #vehiclesToCheck > 0 then
+        elseif nearbyCount > 0 then
             text = "/////////\n" .. text
         else
             text = ".........\n" .. text
@@ -449,7 +465,7 @@ function shrapnel.debugVoxelPositions(vehicle_id, resume_range)
     end
 end
 
-function shrapnel.vehicleEligableForShrapnel(vehicle_id)
+function shrapnel.vehicleEligibleForShrapnel(vehicle_id)
     local vehicleInfo = g_savedata.vehicleInfo[vehicle_id]
     if vehicleInfo == nil then
         return false
@@ -469,7 +485,7 @@ function shrapnel.vehicleEligableForShrapnel(vehicle_id)
     return true
 end
 
-shrapnel.vehicleEligableForShrapnel = d._hookFunctionForProfiling(shrapnel.vehicleEligableForShrapnel, "vehicleEligableForShrapnel")
+shrapnel.vehicleEligibleForShrapnel = d._hookFunctionForProfiling(shrapnel.vehicleEligibleForShrapnel, "vehicleEligibleForShrapnel")
 shrapnel.damageVehicleAtWorldPosition = d._hookFunctionForProfiling(shrapnel.damageVehicleAtWorldPosition, "damageVehicleAtWorldPosition")
 shrapnel.getVehicleVoxelAtWorldPosition = d._hookFunctionForProfiling(shrapnel.getVehicleVoxelAtWorldPosition, "getVehicleVoxelAtWorldPosition")
 shrapnel.checkVoxelExists = d._hookFunctionForProfiling(shrapnel.checkVoxelExists, "checkVoxelExists")

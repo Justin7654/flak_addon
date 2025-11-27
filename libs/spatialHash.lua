@@ -112,6 +112,7 @@ function spatialHash.addVehicleToGrid(vehicle_id, bounds)
 	vehicleCellRanges[vehicle_id] = { cx1,cy1,cz1, cx2,cy2,cz2 }
 end
 
+--- Removes the given vehicle_id from the spatial hash grid. Silently fails if not already present.
 --- @param vehicle_id integer
 function spatialHash.removeVehicleFromGrid(vehicle_id)
 	if largeVehicles[vehicle_id] then
@@ -184,7 +185,7 @@ end
 function spatialHash.finalizeGridUpdate()
 	-- Clear query cache
 	spatialHash.queryCache = {}
-	queryResults = {}
+	queryResults = {0,0,0,0,0}
 end
 
 --- Query nearby vehicles around a point. Returns an array of candidate vehicle IDs (deduped) and the raw count.

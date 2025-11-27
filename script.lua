@@ -161,7 +161,7 @@ function onTick(game_ticks)
 	if success then
 		shrapnel.explosion(hostpos, 5)
 	end
-	if isTickID(0, time.second*5) then
+	if isTickID(0, time.second*10) then
 		d.printProfile()
 	end
 
@@ -214,15 +214,6 @@ function onVehicleLoad(vehicle_id)
 
 	--Complete setup if needed
 	vehicleInfoManager.completeVehicleSetup(vehicle_id)
-
-	--Add to spatial hash grid
-	if shrapnel.vehicleEligableForShrapnel(vehicle_id) then
-		local pos = s.getVehiclePos(vehicle_id)
-		local vehicleInfo = g_savedata.vehicleInfo[vehicle_id]
-		local radius = vehicleInfo.collider_data.radius
-		local bounds = spatialHash.boundsFromCenterRadius(pos[13], pos[14], pos[15], radius)
-		spatialHash.addVehicleToGrid(vehicle_id, bounds)
-	end
 
 	--Start scanning its bounds
 	isScanning, isPaused = boundsScanner.isScanningVehicle(vehicle_id)
@@ -454,10 +445,10 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		g_savedata.debugBoundsScanState = scan_id
 	elseif command == "fixlabels" then
 		--Removes all popups incase a bug leaves abunch behind
-		for i=1, 10000 do
+		for i=1, 450000 do
 			s.removePopup(-1, i)
 		end
-		s.announce("[Flak Commands]", "Cleared all popups (up to ID 10,000)")
+		s.announce("[Flak Commands]", "Cleared all popups (up to ID 450,000)")
 	elseif command == "scanbudget" then
 		args[1] = args[1] or 0.1
 		local newBudget = boundsScanner.calculateBudgetTime(args[1])
