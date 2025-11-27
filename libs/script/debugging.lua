@@ -525,6 +525,7 @@ function debugging.enableProfiling()
 end
 
 function debugging._hookFunctionForProfiling(func, name)
+    if not profiling then return func end
     debug.log("FLAK | Hooking function "..name)
     local originalFunction = func
     return function(...)
@@ -537,11 +538,12 @@ end
 
 if profiling then
     --Hook some of the functions in server
+    --[[
     for key, value in pairs(server) do
         if type(value) == "function" and key ~= "getTimeMillisec" and key ~= "announce" then
             server[key] = debugging._hookFunctionForProfiling(value, "server."..key)
         end
-    end
+    end]]
 else
     debugging.disableProfiling()
 end

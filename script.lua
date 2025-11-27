@@ -34,7 +34,7 @@ g_savedata = {
 		fireRate = property.slider("Flak Fire Rate (seconds between shots)", 1, 20, 1, 4),
 		minAlt = property.slider("Minimum Fire Altitude Base", 100, 700, 50, 200),
 		flakAccuracyMult = property.slider("Flak Accuracy Multiplier", 0.5, 1.5, 0.1, 1),
-		shrapnelSubSteps = property.slider("(ADVANCED) Shrapnel simulation substeps (multiplies performance impact for better collision detection)", 3, 7, 1, 5),
+		shrapnelSubSteps = property.slider("(ADVANCED) Shrapnel simulation substeps (decreases performance for better collision detection)", 6, 12, 1, 10),
 		scanningBudget = property.slider("(ADVANCED) Vehicle bounds scanning budget (ms per tick) (higher = completes faster but more performance impact during the time its running)", 0.1, 1, 0.1, 0.2),
 		shrapnelBombSkipping = true
 	},

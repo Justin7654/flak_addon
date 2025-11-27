@@ -56,6 +56,7 @@ function shrapnel.tickAll()
                 spatialHash.updateVehicleInGrid(vehicle_id, bounds)
 	    	end
 	    end
+        spatialHash.finalizeGridUpdate()
         d.endProfile("spatialHashUpdate")
     else
         -- Decide the vehicles the each shrapnel will check, to minimize the checks needed to be done by each individual shrapnel
@@ -212,11 +213,13 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
             --Attempt to damage
             checks = checks + 1
             hit = shrapnel.damageVehicleAtWorldPosition(vehicle_id, newX, newY, newZ, vehicleZeroPositions[vehicle_id],1, 0.4)
-            if DONT_DESTROY_ON_HIT_DEBUG then
-                hit = false
-            end
+
             if hit then
-                break
+                if DONT_DESTROY_ON_HIT_DEBUG then
+                    hit = false
+                else
+                    break
+                end
             end
         end
 
@@ -243,7 +246,7 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
         else
             text = ".........\n" .. text
         end
-        server.setPopup(-1, chunk.ui_id, "", true, text, x, y, z, 200)
+        server.setPopup(-1, chunk.ui_id, "", true, text, x, y, z, 1000)
         if hit then
             d.debugLabel("shrapnel", m.translation(x, y, z), "Hit", 5*time.second)
         end
@@ -266,7 +269,7 @@ end
 --- @param sourcePos SWMatrix The position to spawn the shrapnel at
 --- @param shrapnelAmount number The amount of shrapnel to spawn
 function shrapnel.explosion(sourcePos, shrapnelAmount)
-    local SHRAPNEL_SPEED = 150 --120 --95
+    local SHRAPNEL_SPEED = 240 --150 --120 --95
     --Cache some globals as locals
     local random = math.random
     local sin = math.sin
@@ -319,7 +322,7 @@ function shrapnel.spawnShrapnel(position, velocityX, velocityY, velocityZ)
         fullVelocityY = velocityY,
         fullVelocityZ = velocityZ,
         ui_id = nil,
-        life = 60,
+        life = 50, --60, (Adapated from speed of 150m/s to 240m/s. Range is now 9000m->12000m)
         id = g_savedata.shrapnelCurrentID,
     }
     g_savedata.shrapnelChunks[g_savedata.shrapnelCurrentID] = shrapnelChunk
