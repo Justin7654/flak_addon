@@ -58,7 +58,7 @@ function shrapnel.tickAll()
         -- Update the spatial hash grid for all loaded vehicles who are eligible for shrapnel
 	    for i, vehicle_id in ipairs(eligibleShrapnelVehicles) do
 	    	local pos, success = s.getVehiclePos(vehicle_id)
-            if success then --Vehicle might have despawned since we last built the eligible list
+            if success and vehicleInfoTable[vehicle_id] then --Vehicle might have despawned since we last built the eligible list
 	    	    local vehicleInfo = vehicleInfoTable[vehicle_id]
                 local bounds = nil
                 cachedVehiclePositions[vehicle_id] = {pos[13], pos[14], pos[15]}

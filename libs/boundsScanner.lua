@@ -26,13 +26,19 @@ This library finds a more accurate bounding box for vehicles by running voxel sc
 
 local boundsScanner = {}
 local MAX_BUDGET = 999999
-local BUDGET = 200
+local BUDGET = -1
 local tickIndex = 1
 
 d = require("libs.script.debugging")
 shrapnel = require("libs.shrapnel")
 
 function boundsScanner.tick()
+    -- Calculate budget if not set
+    if BUDGET < 0 then
+        BUDGET = math.max(boundsScanner.calculateBudgetTime(g_savedata.settings.scanningBudget), 100)
+        return
+    end
+
     -- Get the current scan to process
     local allScans = g_savedata.vehicleBoundScans
     local totalScans = #allScans
@@ -51,9 +57,6 @@ function boundsScanner.tick()
         end
     end
     local chosenScan = allScans[tickIndex]
-    if g_savedata.debug.scan then
-        d.printDebug("Bounds Scanner tick for vehicle ",chosenScan.vehicle_id," (scan id ",chosenScan.scan_id,") at radius ",chosenScan.current_radius or 0)
-    end
     tickIndex = tickIndex + 1
 
     -- Initialize/resume scan state
@@ -307,7 +310,7 @@ function boundsScanner.calculateBudgetTime(time_per_tick)
     local overhead_divisor = 3 --Account for overhead of everything else it does
     local calls_per_tick = math.floor((time_per_tick / time_per_call) / overhead_divisor)
     local calls_per_tick_limited = math.min(calls_per_tick, MAX_BUDGET)
-    --d.printDebug("Calculated bounds scanner budget: ",calls_per_tick_limited," calls per tick (",time_per_call,"ms per call, ",time_passed,"ms spent testing)")
+    d.printDebug("Calculated bounds scanner budget: ",calls_per_tick_limited," calls per tick (",time_per_call,"ms per call, ",time_passed,"ms spent testing)")
     return calls_per_tick_limited
 end
 

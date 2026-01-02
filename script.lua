@@ -104,8 +104,6 @@ function onCreate(is_world_create)
 	if is_world_create then
 		
 	end
-	-- Calculate bounds scanner budget
-	boundsScanner.setBudget(boundsScanner.calculateBudgetTime(g_savedata.settings.scanningBudget))
 end
 
 ---@param game_ticks number the number of ticks since the last onTick call (normally 1, while sleeping 400)
@@ -232,6 +230,7 @@ end
 
 function onVehicleUnload(vehicle_id)
 	d.printDebug("onVehicleUnload:", vehicle_id)
+
 	local index = util.removeFromList(g_savedata.loadedVehicles, vehicle_id)
 
 	--Change flak simulating status
@@ -317,6 +316,10 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 			s.announce("[Flak Commands]", "Event not found; available events:\nNoPlayerIsSafe <difficulty>")
 		end
 	elseif command == "manbulletspeed" and args[1] then
+		if tonumber(args[1]) == nil then
+			s.announce("[Flak Commands]", "ERR: Invalid speed value")
+			return
+		end
 		g_savedata.settings.flakShellSpeed = tonumber(args[1])
 		s.announce("[Flak Commands]", "Flak shell speed set to "..g_savedata.settings.flakShellSpeed.." m/s by "..s.getPlayerName(user_peer_id))
 	elseif command == "checkowners" then
@@ -392,13 +395,6 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		else
 			s.announce("[Flak Commands]", "Malformed vehicle ID")
 		end
-	elseif command == "cleanmaps" then
-		local num = 0
-		for id, map in pairs(g_savedata.debugVoxelMaps) do
-			d.cleanVoxelMap(id)
-			num = num + 1
-		end
-		s.announce("[Flak Commands]", "Cleaned "..num.." voxel maps")
 	elseif command == "debugvoxels" then
 		shrapnel.debugVoxelPositions(tostring(args[1]))
 	elseif command == "bench" then
@@ -458,6 +454,7 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 			s.announce("[Flak Commands]", "ERR: Fake flak position not set. Use ?flak setflakpos to set it to your current position")
 			return
 		end
+		s.announce("[Flak Commands]", "Firing!")
 		local targetPos = s.getPlayerPos(user_peer_id)
 		for i=1, 150 do
 			flakMain.fireFlak(flakPos, targetPos)

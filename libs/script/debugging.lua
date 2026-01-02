@@ -62,10 +62,10 @@ function debugging.tickDebugs()
             -- Display a GUI showing the overall status
             -- Generate the text
             local scanDebugText = ""
-            local header = "?flak viewscan {id} to view details\n"
+            local header = "?flak viewscan {id} to view details\n\n"
             local pausedScans = 0
             local activeScans = 0
-            local optionsText = "Active Scans:\n"
+            local optionsText = "\nActive Scans:\n"
             for i, scanState in pairs(g_savedata.vehicleBoundScans) do
                 if scanState.paused then
                     pausedScans = pausedScans + 1
@@ -79,6 +79,9 @@ function debugging.tickDebugs()
                         optionsText = optionsText.."Radius: "..tostring(scanState.current_radius).."\n"
                     end
                 end
+            end
+            if activeScans == 0 then
+                optionsText = optionsText.."None\n"
             end
             if activeScans > 7 then
                 optionsText = optionsText.."\n... "..(activeScans-5).." more active scans\n"

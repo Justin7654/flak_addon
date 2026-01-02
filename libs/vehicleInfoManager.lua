@@ -73,6 +73,7 @@ function vehicleInfoManager.initNewVehicle(vehicle_id, peer_id, group_id)
 end
 
 --- Can only be called while the vehicle is loaded
+--- @param vehicle_id number the id of the vehicle
 function vehicleInfoManager.completeVehicleSetup(vehicle_id)
     if g_savedata.vehicleInfo[vehicle_id] == nil then
         d.printDebug("completeVehicleSetup was called on ",vehicle_id," but was never initialized!")
@@ -192,7 +193,14 @@ function vehicleInfoManager.completeVehicleSetup(vehicle_id)
 	end
 end
 
+--- Checks if a vehicle has been initialized
+--- @param vehicle_id number the id of the vehicle
+function vehicleInfoManager.isVehicleCreated(vehicle_id)
+	return g_savedata.vehicleInfo[vehicle_id] ~= nil
+end
+
 --- Deletes the given vehicle info from g_savedata to save unnecessary space
+--- @param vehicle_id number the id of the vehicle
 function vehicleInfoManager.cleanVehicleData(vehicle_id)
     if g_savedata.vehicleInfo[vehicle_id] ~= nil then
         d.printDebug("Cleaning up vehicle info for ",vehicle_id)
