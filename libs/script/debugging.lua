@@ -53,7 +53,7 @@ function debugging.tickDebugs()
             local vehicles, count = spatialHash.queryVehiclesNearPoint(pos[13], pos[14], pos[15], 1)
             local playerBounds = spatialHash.boundsFromCenterRadius(pos[13], pos[14], pos[15], 0.1)
             local playerCell = spatialHash._getCellRangeForBounds(playerBounds)
-            d.printDebug("Player ",player_id.id," (in ",playerCell,") found ",count," vehicles nearby: ",vehicles)
+            s.announce("Hash Debug","Player "..tostring(player_id.id).." (in "..playerCell..") found "..count.." vehicles nearby: "..vehicles)
         end
     end
 
@@ -83,7 +83,7 @@ function debugging.tickDebugs()
             if activeScans > 7 then
                 optionsText = optionsText.."\n... "..(activeScans-5).." more active scans\n"
             end
-            header = header.."Active: "..tostring(activeScans).."\nPaused: "..tostring(pausedScans).."\n"
+            header = header.."Active: "..tostring(activeScans).."\nPaused: "..tostring(pausedScans).."\nIdx: "..boundsScanner.getTickIndex().."\n"
             scanDebugText = header..optionsText
             server.setPopupScreen(-1, g_savedata.debugBoundScanUI, "", true, scanDebugText, 0.8, 0)
             --Clean debug bound labels
@@ -289,7 +289,7 @@ local profileData = {}
 local profileSamples = {}
 local sampleCounter = 1
 local ticksProfiled = 0
-local profiling = true
+local profiling = false
 
 function debugging.startProfile(name)
     if profiling == false then return end
@@ -421,6 +421,7 @@ function debugging.profilingTickUpdate()
 end
 
 function debugging.printProfile()
+    if not profiling then return end
     --Make a version of the data that has the total time each function took
     local aggergatedProfileData = {}
     function processAggregate(children)

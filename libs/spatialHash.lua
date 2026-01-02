@@ -315,7 +315,7 @@ function spatialHash.queryVehiclesInCell(x,y,z)
 	local cellID = cellKey(posToCell(x), posToCell(y), posToCell(z))
 	local cacheResult = spatialHash.queryCache[cellID]
 	if cacheResult then
-		return cacheResult
+		return cacheResult, #cacheResult
 	end
 	local cellContents = grid[cellID]
 	-- Copy everything in the cell to a new list so the output isn't mutable
@@ -331,7 +331,7 @@ function spatialHash.queryVehiclesInCell(x,y,z)
 		out[#out+1] = vid
 	end
 	spatialHash.queryCache[cellID] = out
-	return out
+	return out, #out
 end
 
 --- Clears the entire spatial hash grid

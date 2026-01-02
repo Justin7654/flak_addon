@@ -105,7 +105,7 @@ function flakMain.getPseudoTarget(Flak)
     if Flak.pseudoTrackingPlayer ~= nil then 
         --Check if the player is still in range
         local playerPos, success = server.getPlayerPos(Flak.pseudoTrackingPlayer)
-        if success and playerPos[14] > flakMain.calculateMinAlt(Flak,playerPos) and matrix.distance(flakPos, playerPos) < sightDistance then
+        if success and flakMain.canFireAtPosition(flakPos, playerPos) then
             --This player is still in range. Keep targeting them
             return playerPos
         else
@@ -119,14 +119,11 @@ function flakMain.getPseudoTarget(Flak)
     for i, player in pairs(server.getPlayers()) do
         --For each player, check if they are high enough and close enough to flak
         local playerPos, success = server.getPlayerPos(player.id)
-        if success and playerPos[14] > flakMain.calculateMinAlt(Flak,playerPos) then
-            --This player is high enough to be shot by flak
-            if success and matrix.distance(flakPos, playerPos) < sightDistance then
-                --This player is close enough to the flak
-                d.printDebug("Pseudo flak is targeting player ",player.id)
-                Flak.pseudoTrackingPlayer = player.id
-                return playerPos
-            end
+        if success and flakMain.canFireAtPosition(flakPos, playerPos) then
+            --This player is close enough to the flak
+            d.printDebug("Pseudo flak is targeting player ",player.id)
+            Flak.pseudoTrackingPlayer = player.id
+            return playerPos
         end
     end
 
@@ -143,16 +140,46 @@ function flakMain.calculateFlakSight(location)
     return BASE_RADIUS * (1 - (weather.fog * 0.2)) * (0.8 + (math.min(clock.daylight_factor*1.8, 1) * 0.2)) * (1 - (weather.rain * 0.2))
 end
 
---- @param flak FlakData The flak object, used to get the position
---- @param searchPosition SWMatrix? The position to calculate the minimum altitude for. If left blank, uses the flak's last target position
+--- @param flakPosition SWMatrix The position of the flak vehicle
+--- @param searchPosition SWMatrix The position to calculate the minimum altitude for. If left blank, uses the flak's last target position
 --- @return number minAltitude the minimum altitude the flak can fire at
-function flakMain.calculateMinAlt(flak, searchPosition)
-    if searchPosition == nil then
-        searchPosition = flak.targetPositionData[#flak.targetPositionData].pos
-    end
-    local flakPosition = flak.position
+function flakMain.calculateMinAlt(flakPosition, searchPosition)
     local XZDistance =  util.calculateEuclideanDistance(flakPosition[13], searchPosition[13], flakPosition[15], searchPosition[15])
     return g_savedata.settings.minAlt + (XZDistance/20)
+end
+
+--- Checks if the flak can fire at a point based on physical constraints
+--- @param sourceMatrix SWMatrix the matrix of the flak vehicle
+--- @param targetMatrix SWMatrix the matrix of the target
+--- @return boolean canFire True if the flak can fire at the target
+--- @return number? reasonCode the reason it cant fire here
+function flakMain.canFireAtPosition(sourceMatrix, targetMatrix)
+    local sourceX, sourceY, sourceZ = matrix.position(sourceMatrix)
+    local targetX, targetAltitude, targetZ = matrix.position(targetMatrix)
+
+    -- Check if its too far away
+    local maxDistance = flakMain.calculateFlakSight(sourceMatrix)
+    if matrix.distance(sourceMatrix, targetMatrix) > maxDistance then
+        return false, 1
+    end
+
+    -- Check if its too low
+    local minAltitude = flakMain.calculateMinAlt(sourceMatrix, targetMatrix)
+    if targetAltitude < minAltitude then
+        return false, 2
+    end
+
+    -- Check if it would exceed max elevation angle
+    local deltaX = targetX - sourceX
+    local deltaY = targetAltitude - sourceY
+    local deltaZ = targetZ - sourceZ
+    local horizontalDistance = math.sqrt(deltaX * deltaX + deltaZ * deltaZ)
+    local elevationAngle = math.atan(deltaY / math.max(horizontalDistance, 1e-6))
+    if elevationAngle > math.rad(85) then
+        d.printDebug("Elevation angle too high: ",math.deg(elevationAngle))
+        return false, 3
+    end
+    return true, nil
 end
 
 --- Calculate the time it will take for the flak to reach the target
@@ -256,7 +283,7 @@ function flakMain.fireFlak(sourceMatrix, targetMatrix) --Convert to using flakOb
     local rangeToTarget = math.sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ)
 
     -- Base dispersion in milliradians
-    local baseDispersionMils = 10.0 -- Biggest factor in accuracy, the angle precision of the gun
+    local baseDispersionMils = 18.0 -- Biggest factor in accuracy, the angle precision of the gun
     local accuracyMultiplier = math.max(g_savedata.settings.flakAccuracyMult or 1, 0.1)
     
     -- Horizontal correlation factor, creates elliptical shot grouping instead of circular
@@ -273,10 +300,10 @@ function flakMain.fireFlak(sourceMatrix, targetMatrix) --Convert to using flakOb
 
     -- Calculate the shells time of flight for fuze error calculations
     local travelTimeInTicks = flakMain.calculateTravelTime(targetMatrix, sourceMatrix)
-    local timeOfFlightSeconds = travelTimeInTicks / (time.second or 60)
+    local timeOfFlightSeconds = travelTimeInTicks / (time.second)
 
     -- Calculate a fuze timing error based on its vertical velocity to add error vertically
-    local fuzeTimingStdDevMs = 80 --milliseconds of error
+    local fuzeTimingStdDevMs = 70 --milliseconds of error
     local verticalVelocityEstimate = deltaY / math.max(timeOfFlightSeconds, 1e-3)
     local fuzeAltitudeError = math.abs(verticalVelocityEstimate) * (fuzeTimingStdDevMs / 1000)
     
@@ -328,7 +355,7 @@ function flakMain.flakExplosion(explosionData)
     position = explosionData.position
     d.printDebug("Explosion is at ",s.getTile(position).name," as magnitude ",magnitude)
     s.spawnExplosion(position, magnitude)
-    shrapnel.explosion(position,95)
+    shrapnel.explosion(position,200)
 end
 
 return flakMain

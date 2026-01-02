@@ -46,11 +46,14 @@ function boundsScanner.tick()
         tickIndex = tickIndex + 1
         attempts = attempts + 1
         if tickIndex > totalScans then tickIndex = 1 end
-        if attempts >= totalScans or allScans[tickIndex] == nil then
+        if attempts >= totalScans then
             return --Theres nothing to scan currrently, everythings unloaded
         end
     end
     local chosenScan = allScans[tickIndex]
+    if g_savedata.debug.scan then
+        d.printDebug("Bounds Scanner tick for vehicle ",chosenScan.vehicle_id," (scan id ",chosenScan.scan_id,") at radius ",chosenScan.current_radius or 0)
+    end
     tickIndex = tickIndex + 1
 
     -- Initialize/resume scan state
@@ -310,6 +313,10 @@ end
 
 function boundsScanner.setBudget(new_budget)
     BUDGET = new_budget
+end
+
+function boundsScanner.getTickIndex()
+    return tickIndex
 end
 
 return boundsScanner

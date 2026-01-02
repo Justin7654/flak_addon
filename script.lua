@@ -23,6 +23,7 @@ spatialHash.removeVehicleFromGrid = d._hookFunctionForProfiling(spatialHash.remo
 spatialHash.updateVehicleInGrid = d._hookFunctionForProfiling(spatialHash.updateVehicleInGrid, "updateVehicleInGrid")
 spatialHash.boundsFromCenterRadius = d._hookFunctionForProfiling(spatialHash.boundsFromCenterRadius, "boundsFromCenterRadius")
 spatialHash.boundsFromOBB = d._hookFunctionForProfiling(spatialHash.boundsFromOBB, "boundsFromOBB")
+spatialHash.queryShortLine = d._hookFunctionForProfiling(spatialHash.queryShortLine, "queryShortLine")
 
 -- Data
 g_savedata = {
@@ -34,17 +35,12 @@ g_savedata = {
 		fireRate = property.slider("Flak Fire Rate (seconds between shots)", 1, 20, 1, 4),
 		minAlt = property.slider("Minimum Fire Altitude Base", 100, 700, 50, 200),
 		flakAccuracyMult = property.slider("Flak Accuracy Multiplier", 0.5, 1.5, 0.1, 1),
-		shrapnelSubSteps = property.slider("(ADVANCED) Shrapnel simulation substeps (decreases performance for better collision detection)", 6, 12, 1, 10),
-		scanningBudget = property.slider("(ADVANCED) Vehicle bounds scanning budget (ms per tick) (higher = completes faster but more performance impact during the time its running)", 0.1, 1, 0.1, 0.2),
+		shrapnelSubSteps = property.slider("(ADVANCED) Shrapnel simulation substeps (decreases performance for better collision detection)", 6, 14, 1, 10),
+		scanningBudget = property.slider("(ADVANCED) Vehicle bounds scanning budget (ms per tick) (higher = completes faster but more performance impact during the time its running)", 0.1, 1, 0.1, 0.5),
 		shrapnelBombSkipping = true
 	},
 	fun = {
-		noPlayerIsSafe = {
-			active = false,
-			difficulty = 1,
-			shots = 0,
-			prevPlayerPositions = {} ---@type table<number, SWMatrix>
-		}
+		
 	},
 	spawnedFlak = {}, ---@type FlakData[]
 	loadedVehicles = {}, ---@type number[]
@@ -52,7 +48,7 @@ g_savedata = {
 	vehicleInfo = {}, ---@type table<number, vehicleInfo>
 	debug = {
 		chat = false,
-		warning = true,
+		warning = false,
 		error = true,
 		lead = false,
 		task = false,
@@ -75,7 +71,8 @@ g_savedata = {
 	debugBoundScanUI = server.getMapID(),
 	debugBoundsScanState = -1, -- -1=overview, any other is the scan ID being viewed
 	debugBoundScanLabelUI = nil, ---@type number[]? List of UI IDs for the debug bound scan labels
-	fakeFlakPosition = nil ---@type SWMatrix? Used in commands, this is a hypothetical position for firing fake flak from
+	fakeFlakPosition = nil, ---@type SWMatrix? Used in commands, this is a hypothetical position for firing fake flak from
+	forceSlowMo = nil,
 }
 
 --- @alias callbackID "freeDebugLabel" | "setPopup" | "flakExplosion" | "tickShrapnelChunk" | "debugVoxelPositions"
@@ -113,7 +110,6 @@ end
 
 ---@param game_ticks number the number of ticks since the last onTick call (normally 1, while sleeping 400)
 function onTick(game_ticks)
-	--s.announce("[]", g_savedata.tickCounter)
     g_savedata.tickCounter = g_savedata.tickCounter + 1
 
 	--Loop through all flak once every 10 seconds and if they are targeting a player higher than 150m then
@@ -149,21 +145,22 @@ function onTick(game_ticks)
 				--Calculate lead
 				local leadMatrix = flakMain.calculateLead(flak)
 				
-				--Fire the flak
-				if leadMatrix then
+				--Fire the flak if able to
+				if leadMatrix and flakMain.canFireAtPosition(sourceMatrix, leadMatrix) then
 					flakMain.fireFlak(sourceMatrix, leadMatrix)
 				end
 			end
 		end
 	end
 
+	--[[ Used for benchmarking overall performance in the benchmark scene
 	local hostpos, success = s.getPlayerPos(0)
 	if success then
 		shrapnel.explosion(hostpos, 5)
 	end
 	if isTickID(0, time.second*10) then
 		d.printProfile()
-	end
+	end]]
 
 	--Tick shrapnel
 	local shrapnelSkipped = shrapnel:tickAll()
@@ -171,22 +168,15 @@ function onTick(game_ticks)
 	--Tick bounds scanning
 	boundsScanner.tick()
 	
-	--Fun Events
-	if g_savedata.fun.noPlayerIsSafe.active then
-		for _, player in pairs(s.getPlayers()) do
-			playerPosition, success = s.getPlayerPos(player.id)
-			if success and isTickID(1, math.floor(updateRate/g_savedata.fun.noPlayerIsSafe.difficulty)) or math.random(1,60) == 1 then
-				flakMain.fireFlak(playerPosition, playerPosition)
-				g_savedata.fun.noPlayerIsSafe.shots = g_savedata.fun.noPlayerIsSafe.shots + 1
-			end
-		end
-	end
-	
 	sanity.idleCheck()
 	taskService:handleTasks()
 	d.tickDebugs()
 	benchmark.tick()
 	d.flushProfilingSamples()
+
+	if not shrapnelSkipped and g_savedata.forceSlowMo ~= nil then
+		d.wait(g_savedata.forceSlowMo)
+	end
 end
 
 function onVehicleLoad(vehicle_id)
@@ -493,6 +483,13 @@ function onCustomCommand(full_message, user_peer_id, is_admin, is_auth, prefix, 
 		end
 	elseif command == "startbenchmark" then
 		benchmark.startBenchmark()
+	elseif command == "slowmo" then
+		if args[1] == nil or args[1] == "0" or args[1] == "off" then
+			g_savedata.forceSlowMo = nil
+			return
+		end	
+		amount = tonumber(args[1]) or 0.5
+		g_savedata.forceSlowMo = amount
 	else
 		s.announce("[Flak Commands]", "Command not found")
 	end

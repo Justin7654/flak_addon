@@ -1,8 +1,8 @@
-taskService = require("libs.script.taskService")
-matrixExtras = require("libs.script.matrixExtras")
-spatialHash = require("libs.spatialHash")
-d = require("libs.script.debugging")
-shrapnel = {}
+local taskService = require("libs.script.taskService")
+local matrixExtras = require("libs.script.matrixExtras")
+local spatialHash = require("libs.spatialHash")
+local d = require("libs.script.debugging")
+local shrapnel = {}
 
 -- Performance tracking excel sheet:https://1drv.ms/x/c/5e0eec0b38cb0474/EWqWCGP-O2VOr-6FV9Qp3EIBIXUpqVqg8FAa8HjlWxKk2g?e=Z7Dj0n
 
@@ -27,7 +27,7 @@ function shrapnel.tickAll()
         return true
     end
     d.profilingTickUpdate()
-    d.startProfile("tickAllShrapnel")
+    --d.startProfile("tickAllShrapnel")
 
     local vehicleInfoTable = g_savedata.vehicleInfo
     local vehiclesToCheck = {}
@@ -35,7 +35,7 @@ function shrapnel.tickAll()
     local vehicleZeroPositions = {}
     local vehicleColliderRadiuses = {}
     if USE_SPATIAL_HASH then
-        d.startProfile("spatialHashUpdate")
+        --d.startProfile("spatialHashUpdate")
         cachedVehiclePositions = {}
         cachedZeroPositions = {}
         cachedColliderRadiuses = {}
@@ -44,7 +44,7 @@ function shrapnel.tickAll()
         -- It doesn't actually take that long even with large amounts of loadedVehicles but vehicleEligibleForShrapnel() takes up most of the time
         -- updating spatial hash so this is a easy way to reduce the spatial hash update overhead
         if eligibleShrapnelVehicles == nil or g_savedata.tickCounter >= eligibleNextUpdateTick then
-            d.startProfile("eligibleVehicleListUpdate")
+            --d.startProfile("eligibleVehicleListUpdate")
             eligibleShrapnelVehicles = {}
             for _,vehicle_id in ipairs(g_savedata.loadedVehicles) do
                 if shrapnel.vehicleEligibleForShrapnel(vehicle_id) then
@@ -52,7 +52,7 @@ function shrapnel.tickAll()
                 end
             end
             eligibleNextUpdateTick = g_savedata.tickCounter + 20
-            d.endProfile("eligibleVehicleListUpdate")
+            --d.endProfile("eligibleVehicleListUpdate")
         end
 
         -- Update the spatial hash grid for all loaded vehicles who are eligible for shrapnel
@@ -73,7 +73,7 @@ function shrapnel.tickAll()
             end
 	    end
         spatialHash.finalizeGridUpdate()
-        d.endProfile("spatialHashUpdate")
+        --d.endProfile("spatialHashUpdate")
     else
         -- Decide the vehicles the each shrapnel will check, to minimize the checks needed to be done by each individual shrapnel
         for _,vehicle_id in ipairs(g_savedata.loadedVehicles) do
@@ -108,12 +108,10 @@ function shrapnel.tickAll()
     end
 
     -- Go through all the shrapnel chunks and tick them
-    d.startProfile("tickChunks")
     for _, chunk in pairs(g_savedata.shrapnelChunks) do
         shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, vehicleZeroPositions, vehicleColliderRadiuses)
     end
-    d.endProfile("tickChunks")
-    d.endProfile("tickAllShrapnel")
+    --d.endProfile("tickAllShrapnel")
     return false
 end
 
@@ -128,7 +126,7 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
         return d.printError("Shrapnel", "Failed to tick shrapnel chunk, chunk is nil")
     end
     --Get nearby vehicles using spatial hash
-    d.startProfile("getNearby")
+    --d.startProfile("getNearby")
     local futureX = chunk.positionX + chunk.fullVelocityX
     local futureY = chunk.positionY + chunk.fullVelocityY
     local futureZ = chunk.positionZ + chunk.fullVelocityZ
@@ -136,13 +134,11 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
     local nearbyCount
     if USE_SPATIAL_HASH then
         --Use spatial hashing to get the nearby vehicles
-        d.startProfile("spatialHashQuery")
-        --local nearbyVehicles = spatialHash.queryVehiclesInCell(chunk.positionX, chunk.positionY, chunk.positionZ)
+        --nearbyVehicles, nearbyCount = spatialHash.queryVehiclesInCell(chunk.positionX, chunk.positionY, chunk.positionZ)
         nearbyVehicles, nearbyCount = spatialHash.queryShortLine(chunk.positionX, chunk.positionY, chunk.positionZ, futureX, futureY, futureZ)
-        d.endProfile("spatialHashQuery")
 
         --Get the needed data for each vehicle
-        d.startProfile("cacheVehicleData")
+        --d.startProfile("cacheVehicleData")
         for v=1, nearbyCount do
             local vehicle = nearbyVehicles[v]
             -- Get the vehicle positions
@@ -179,14 +175,13 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
             end
             vehicleColliderRadiuses[vehicle] = cachedColliderRadiuses[vehicle]
         end
-        d.endProfile("cacheVehicleData")
+        --d.endProfile("cacheVehicleData")
     end
-    d.endProfile("getNearby")
+    --d.endProfile("getNearby")
 
     --Pre-decide which vehicles are close enough since they generally wont change between steps, and it wont matter much if it does change
-    d.startProfile("broadPhase")
+    --d.startProfile("broadPhase")
     local finalVehicles = {}
-    --for i,vehicle_id in ipairs(vehiclesToCheck) do
     for i=1, nearbyCount do
         local vehicle_id = nearbyVehicles[i]
         --Check if its more than 30m away from the final position of this tick
@@ -203,10 +198,10 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
             end
         end
     end
-    d.endProfile("broadPhase")
+    --d.endProfile("broadPhase")
 
     --Start stepping the position and checking if its hit anything
-    d.startProfile("stepping")
+    --d.startProfile("stepping")
     local hit = false
     local checks = 0
     local totalSteps = g_savedata.settings.shrapnelSubSteps
@@ -245,10 +240,9 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
         end
     end
     chunk.positionX, chunk.positionY, chunk.positionZ = futureX, futureY, futureZ
-    d.endProfile("stepping")
+    --d.endProfile("stepping")
     
     --Shrapnel debug
-    d.startProfile("shrapnelMisc")
     if g_savedata.debug.shrapnel then
         if chunk.ui_id == nil then
             chunk.ui_id = s.getMapID()
@@ -262,7 +256,7 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
         else
             text = ".........\n" .. text
         end
-        server.setPopup(-1, chunk.ui_id, "", true, text, x, y, z, 1000)
+        server.setPopup(-1, chunk.ui_id, "", true, text, x, y, z, 300)
         if hit then
             d.debugLabel("shrapnel", m.translation(x, y, z), "Hit", 5*time.second)
         end
@@ -278,7 +272,6 @@ function shrapnel.tickShrapnelChunk(chunk, vehiclesToCheck, vehiclePositions, ve
         end
         g_savedata.shrapnelChunks[chunk.id] = nil
     end
-    d.endProfile("shrapnelMisc")
 end
 
 --- Spawns a explosion of shrapnel at the given position moving outwards
@@ -338,7 +331,7 @@ function shrapnel.spawnShrapnel(position, velocityX, velocityY, velocityZ)
         fullVelocityY = velocityY,
         fullVelocityZ = velocityZ,
         ui_id = nil,
-        life = 50, --60, (Adapated from speed of 150m/s to 240m/s. Range is now 9000m->12000m)
+        life = 60,
         id = g_savedata.shrapnelCurrentID,
     }
     g_savedata.shrapnelChunks[g_savedata.shrapnelCurrentID] = shrapnelChunk
@@ -490,5 +483,6 @@ shrapnel.damageVehicleAtWorldPosition = d._hookFunctionForProfiling(shrapnel.dam
 shrapnel.getVehicleVoxelAtWorldPosition = d._hookFunctionForProfiling(shrapnel.getVehicleVoxelAtWorldPosition, "getVehicleVoxelAtWorldPosition")
 shrapnel.checkVoxelExists = d._hookFunctionForProfiling(shrapnel.checkVoxelExists, "checkVoxelExists")
 shrapnel.calculateVehicleVoxelZeroPosition = d._hookFunctionForProfiling(shrapnel.calculateVehicleVoxelZeroPosition, "calculateVehicleVoxelZeroPosition")
+shrapnel.tickShrapnelChunk = d._hookFunctionForProfiling(shrapnel.tickShrapnelChunk, "tickShrapnelChunk")
 
 return shrapnel
